@@ -7,6 +7,8 @@ from contextlib import contextmanager
 from opentelemetry import trace
 from opentelemetry.trace import Link, SpanKind
 
+from oaar_impl import correlation
+
 RUN_SPAN_NAME = "agent.run"
 DECISION_SPAN_NAME = "agent.decision"
 CHECKPOINT_SAVE_SPAN_NAME = "agent.checkpoint.save"
@@ -64,6 +66,7 @@ ATTR_GUARDRAIL_OUTCOME = "agent.guardrail.outcome"
 ATTR_GUARDRAIL_RISK_CATEGORY = "agent.guardrail.risk.category"
 
 ATTR_LINK_TYPE = "agent.runtime.link.type"
+ATTR_LOGICAL_OUTCOME = "agent.runtime.logical.outcome"
 ATTR_LOG_CATEGORY = "agent.log.category"
 ATTR_LOG_CLASSIFICATION = "agent.log.classification"
 
@@ -104,6 +107,7 @@ _unique_id_attrs = frozenset(
         ATTR_TOOL_CALL_ID,
         ATTR_TOOL_IDEMPOTENCY_KEY,
         ATTR_EFFECT_ID,
+        correlation.OPERATION_ID_ATTR,
     }
 )
 
@@ -171,7 +175,7 @@ def run_span(
 
 @contextmanager
 def decision_span(
-    decision_id: str, kind: str, basis: str, outcome: str, iteration: int
+    decision_id: str, kind: str, basis: str, outcome: str, iteration: int, *, links: list | None = None
 ):
     if kind not in DECISION_KINDS:
         raise SemanticViolation(
@@ -186,6 +190,7 @@ def decision_span(
             ATTR_DECISION_OUTCOME: outcome,
             ATTR_ITERATION: iteration,
         },
+        links=links or [],
     ) as span:
         yield span
 
@@ -320,14 +325,15 @@ def emit_lifecycle(event: str, *, reason: str, actor: str, state_version: int):
         raise SemanticViolation(
             f"lifecycle event {event!r} invalid; must be one of {sorted(LIFECYCLE_EVENTS)}"
         )
-    _current_span().add_event(
-        event,
-        attributes={
-            ATTR_TRANSITION_REASON: reason,
-            ATTR_TRANSITION_ACTOR: actor,
-            ATTR_STATE_VERSION: state_version,
-        },
-    )
+    attributes = {
+        ATTR_TRANSITION_REASON: reason,
+        ATTR_TRANSITION_ACTOR: actor,
+        ATTR_STATE_VERSION: state_version,
+    }
+    op = correlation.current_operation()
+    if op:
+        attributes[correlation.OPERATION_ID_ATTR] = op
+    _current_span().add_event(event, attributes=attributes)
 
 
 def emit_state_transition(
@@ -339,18 +345,19 @@ def emit_state_transition(
     actor: str,
     state_version: int,
 ):
-    _current_span().add_event(
-        "agent.state.transition",
-        attributes={
-            ATTR_STATE_VERSION: state_version,
-            ATTR_STATE_FROM: previous,
-            ATTR_STATE_TO: nxt,
-            ATTR_STATE_CHANGED_KEYS: ",".join(changed_keys),
-            ATTR_STATE_DIFF_HASH: diff_hash(diff),
-            ATTR_TRANSITION_REASON: reason,
-            ATTR_TRANSITION_ACTOR: actor,
-        },
-    )
+    attributes = {
+        ATTR_STATE_VERSION: state_version,
+        ATTR_STATE_FROM: previous,
+        ATTR_STATE_TO: nxt,
+        ATTR_STATE_CHANGED_KEYS: ",".join(changed_keys),
+        ATTR_STATE_DIFF_HASH: diff_hash(diff),
+        ATTR_TRANSITION_REASON: reason,
+        ATTR_TRANSITION_ACTOR: actor,
+    }
+    op = correlation.current_operation()
+    if op:
+        attributes[correlation.OPERATION_ID_ATTR] = op
+    _current_span().add_event("agent.state.transition", attributes=attributes)
 
 
 def log_with_context(

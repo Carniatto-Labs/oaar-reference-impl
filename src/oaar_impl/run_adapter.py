@@ -5,8 +5,16 @@ from dataclasses import dataclass
 
 from opentelemetry.trace import SpanContext
 
+from oaar_impl import correlation
 from oaar_impl import metrics as m
-from oaar_impl.spans import emit_lifecycle, link, log_with_context, new_id, run_span
+from oaar_impl.spans import (
+    ATTR_LOGICAL_OUTCOME,
+    emit_lifecycle,
+    link,
+    log_with_context,
+    new_id,
+    run_span,
+)
 
 
 @dataclass
@@ -17,6 +25,7 @@ class RunHandle:
     workflow_name: str = ""
     workflow_version: str = ""
     outcome: str | None = None
+    logical_outcome: str | None = None
 
     def resume_link(self, relationship: str = "resume"):
         return link(self.span_context, relationship)
@@ -60,8 +69,16 @@ def durable_run(
     if parent is not None:
         kwargs["parent_run_id"] = parent.run_id
     started = time.monotonic()
+    op = correlation.current_operation()
+    extra_attributes = {correlation.OPERATION_ID_ATTR: op} if op else None
     with run_span(
-        run_id, thread_id, workflow_name, workflow_version, links=links, **kwargs
+        run_id,
+        thread_id,
+        workflow_name,
+        workflow_version,
+        links=links,
+        extra_attributes=extra_attributes,
+        **kwargs,
     ) as span:
         handle = RunHandle(
             run_id, thread_id, span.get_span_context(), workflow_name, workflow_version
@@ -85,6 +102,9 @@ def durable_run(
         except Exception as exc:
             handle.outcome = "failed"
             duration_ms = (time.monotonic() - started) * 1000
+            if handle.logical_outcome is None:
+                handle.logical_outcome = "pending"
+            span.set_attribute(ATTR_LOGICAL_OUTCOME, handle.logical_outcome)
             emit_lifecycle(
                 "agent.run.failed",
                 reason=str(exc)[:200] or "error",
@@ -105,6 +125,8 @@ def durable_run(
             if handle.outcome is None:
                 handle.outcome = "completed"
             duration_ms = (time.monotonic() - started) * 1000
+            if handle.logical_outcome:
+                span.set_attribute(ATTR_LOGICAL_OUTCOME, handle.logical_outcome)
             emit_lifecycle(
                 f"agent.run.{handle.outcome}",
                 reason=getattr(handle, "outcome_reason", "run finished"),
