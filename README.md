@@ -2,9 +2,7 @@
 
 Reference implementation of the [Observability Architecture for Agentic Runtimes (OAAR) RFC](https://github.com/Carniatto-Labs/oaar) on a real durable agent runtime (LangGraph 1.0, Temporal planned as second framework).
 
-**Status:** phase 5 complete — all five runtime scenarios validated on a real durable runtime. Earlier phases: three-denominator ABC validation (phase 4, `make abc-smoke` / `make abc-unknown-smoke`, 8/8 PASS each), langgraph checkpoint adapter (phase 3, 6/6), pipeline smoke (5/5).
-
-Phase 5 scenarios (each `make <target>` = demo + automated verification against Tempo/Prometheus/Loki):
+**Status:** phase 6 complete — **`make validate` = 54/54 checks** across ten scenarios, with **Grafana reflecting every run** (two provisioned dashboards; verified in-process by the `grafana` scenario). Phase 5 scenarios (each also runnable standalone via `make <target>`):
 
 | Scenario | Target | Validates |
 | --- | --- | --- |
@@ -13,6 +11,15 @@ Phase 5 scenarios (each `make <target>` = demo + automated verification against 
 | Delegation fan-out | `make fanout-smoke` (4/4) | Parent/child execution identity: `parent_run.id` on children, `delegates_to` + `aggregates` links from parent to both child traces |
 | Guardrail block | `make guardrail-smoke` (4/4) | Pre-execution block → `agent.run.cancelled` (not failed); guardrail evaluation span; sensitive source content provably absent from traces AND logs |
 | MCP retry + idempotent dedup | `make mcp-smoke` (5/5) | W3C trace context propagation to an MCP server, retry correlation via `retries` link, deduplication observable per attempt (`agent.tool.deduplication.status`) |
+
+Phase 6 additions:
+
+- `make validate` — full harness: runs every demo + verify pair (pipeline, langgraph, abc, abc-unknown, hitl, saga, fanout, guardrail, mcp, grafana) in one pass and prints the consolidated **RFC section → evidence** matrix. Current output: 54 pass / 0 fail.
+- **Grafana** at `http://localhost:3000` (anonymous admin), folder **OAAR**:
+  - *Runtime & Execution Identity* — total executions, outcomes by state, run duration, executions by workflow × outcome, decisions by kind.
+  - *Logical Outcomes, Effects & Controls* — compensations by outcome, guardrail evaluations, tool calls by dedup status, tool table, and a live lifecycle log panel correlated by run id.
+  - Datasources (Prometheus `oaar-prom`, Tempo `oaar-tempo`, Loki `oaar-loki`) and dashboards are fully provisioned from `grafana/`.
+  - `make dash-smoke` proves the reflection programmatically: dashboards exist, and the exact panel queries return scenario data through Grafana's datasource proxy.
 
 ## Purpose
 

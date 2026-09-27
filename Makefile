@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke lock clean
+.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke validate dash-smoke lock clean
 
 up:
 	$(COMPOSE) up -d --wait
@@ -51,6 +51,13 @@ guardrail-smoke:
 mcp-smoke:
 	$(COMPOSE) build app mcp-server
 	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_mcp_retry_dedup && python -m oaar_impl.verify_mcp_retry_dedup"
+
+validate:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app python -m oaar_impl.validate
+
+dash-smoke:
+	$(COMPOSE) run --rm app python -m oaar_impl.verify_dashboards
 
 lock:
 	uv lock

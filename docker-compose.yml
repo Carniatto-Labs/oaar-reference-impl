@@ -69,6 +69,10 @@ services:
     configs:
       - source: grafana_datasources
         target: /etc/grafana/provisioning/datasources/datasources.yml
+      - source: grafana_dashboards_provider
+        target: /etc/grafana/provisioning/dashboards/provider.yml
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     depends_on:
@@ -122,6 +126,8 @@ services:
         condition: service_healthy
       mcp-server:
         condition: service_healthy
+      grafana:
+        condition: service_started
 
 volumes:
   pgdata:
@@ -135,3 +141,5 @@ configs:
     file: ./prometheus/prometheus.yml
   grafana_datasources:
     file: ./grafana/provisioning/datasources/datasources.yml
+  grafana_dashboards_provider:
+    file: ./grafana/provisioning/dashboards/provider.yml

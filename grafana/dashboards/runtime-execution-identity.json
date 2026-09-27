@@ -1,0 +1,73 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "blue", "value": null } ] } } },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum(oaar_runs_total)", "legendFormat": "runs", "refId": "A" } ],
+      "title": "Executions (RFC §4 denominator)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 10, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_run_outcome) (oaar_runs_total)", "legendFormat": "{{agent_run_outcome}}", "refId": "A" } ],
+      "title": "Run outcomes — completed / failed / cancelled (RFC §5, §11)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum(oaar_run_duration_milliseconds_sum) / sum(oaar_run_duration_milliseconds_count)", "legendFormat": "avg duration (ms)", "refId": "A" }
+      ],
+      "title": "Run duration, cumulative avg (RFC §11)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellHeight": "sm" }, "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "id": 4,
+      "options": { "cellHeight": "sm", "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false }, "showHeader": true },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "exemplar": false, "expr": "sum by (agent_runtime_workflow_name, agent_run_outcome) (oaar_runs_total)", "format": "table", "instant": true, "legendFormat": "", "refId": "A" } ],
+      "title": "Executions by workflow × outcome (every scenario lands here)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_decision_kind) (oaar_decisions_total)", "legendFormat": "{{agent_decision_kind}}", "refId": "A" } ],
+      "title": "Decision cycles by kind (RFC §7)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 40,
+  "tags": ["oaar"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OAAR · Runtime & Execution Identity",
+  "uid": "oaar-runtime",
+  "version": 4,
+  "weekStart": ""
+}

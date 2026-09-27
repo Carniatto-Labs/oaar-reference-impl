@@ -1,0 +1,81 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_compensation_outcome) (oaar_compensations_total)", "legendFormat": "{{agent_compensation_outcome}}", "refId": "A" } ],
+      "title": "Compensations by outcome (RFC §9 saga)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_guardrail_outcome) (oaar_guardrail_evaluations_total)", "legendFormat": "{{agent_guardrail_outcome}}", "refId": "A" } ],
+      "title": "Guardrail evaluations (RFC §12)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_tool_deduplication_status) (oaar_tool_calls_total)", "legendFormat": "{{agent_tool_deduplication_status}}", "refId": "A" } ],
+      "title": "Tool calls by dedup status (RFC §8 idempotency)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellHeight": "sm" }, "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 4,
+      "options": { "cellHeight": "sm", "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false }, "showHeader": true },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "exemplar": false, "expr": "sum by (gen_ai_tool_name, agent_tool_effect_class, agent_tool_deduplication_status) (oaar_tool_calls_total)", "format": "table", "instant": true, "legendFormat": "", "refId": "A" } ],
+      "title": "Tool calls: name × effect class × dedup (RFC §8)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "oaar-loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 8 },
+      "id": 5,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [ { "datasource": { "type": "loki", "uid": "oaar-loki" }, "expr": "{service_name=\"oaar-impl\"} |= \"run run-\"", "queryType": "range", "refId": "A" } ],
+      "title": "Run lifecycle log lines, correlated by run id (RFC §4, §5, §13)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_decision_kind) (oaar_decisions_total)", "legendFormat": "{{agent_decision_kind}}", "refId": "A" } ],
+      "title": "Decisions by kind (RFC §7)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 40,
+  "tags": ["oaar"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OAAR · Logical Outcomes, Effects & Controls",
+  "uid": "oaar-effects",
+  "version": 2,
+  "weekStart": ""
+}
