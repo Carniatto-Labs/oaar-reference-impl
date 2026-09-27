@@ -2,7 +2,7 @@
 
 Reference implementation of the [Observability Architecture for Agentic Runtimes (OAAR) RFC](https://github.com/Carniatto-Labs/oaar) on a real durable agent runtime (LangGraph 1.0, Temporal planned as second framework).
 
-**Status:** planning — see [PLAN.md](PLAN.md).
+**Status:** phase 1 complete — pinned stack boots, preflight 8/8 PASS. See [PLAN.md](PLAN.md).
 
 ## Purpose
 

@@ -1,0 +1,22 @@
+[project]
+name = "oaar-impl"
+version = "0.1.0"
+description = "OAAR reference implementation: validation of the Observability Architecture for Agentic Runtimes RFC"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "langgraph==1.2.12",
+    "langgraph-checkpoint-postgres==3.1.2",
+    "opentelemetry-sdk==1.45.0",
+    "opentelemetry-exporter-otlp-proto-grpc==1.45.0",
+    "opentelemetry-exporter-otlp-proto-http==1.45.0",
+    "psycopg[binary,pool]==3.3.6",
+    "fastapi==0.141.1",
+    "uvicorn==0.54.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oaar_impl"]
