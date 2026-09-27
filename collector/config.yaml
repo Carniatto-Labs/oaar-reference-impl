@@ -11,6 +11,23 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
+  transform/redact:
+    trace_statements:
+      - context: span
+        statements:
+          - replace_all_patterns(attributes, "value", "sk-[A-Za-z0-9_-]{12,}", "***REDACTED***")
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***REDACTED***")
+      - context: spanevent
+        statements:
+          - replace_all_patterns(attributes, "value", "sk-[A-Za-z0-9_-]{12,}", "***REDACTED***")
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***REDACTED***")
+    log_statements:
+      - context: log
+        statements:
+          - replace_all_patterns(attributes, "value", "sk-[A-Za-z0-9_-]{12,}", "***REDACTED***")
+          - replace_all_patterns(attributes, "value", "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***REDACTED***")
+          - replace_pattern(body, "sk-[A-Za-z0-9_-]{12,}", "***REDACTED***") where body != nil
+          - replace_pattern(body, "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", "***REDACTED***") where body != nil
   batch:
     timeout: 5s
 
@@ -31,7 +48,7 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/redact, batch]
       exporters: [otlp/tempo]
     metrics:
       receivers: [otlp]
@@ -39,5 +56,5 @@ service:
       exporters: [prometheus]
     logs:
       receivers: [otlp]
-      processors: [batch]
+      processors: [transform/redact, batch]
       exporters: [otlphttp/loki]

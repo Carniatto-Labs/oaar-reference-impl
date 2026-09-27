@@ -111,6 +111,7 @@ services:
     command: ["python", "-m", "oaar_impl.preflight"]
     environment:
       OAAR_POSTGRES_DSN: postgresql://oaar:oaar@postgres:5432/oaar
+      OAAR_OTLP_ENDPOINT: http://otel-collector:4318
     profiles: ["preflight"]
     depends_on:
       postgres:

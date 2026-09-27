@@ -17,6 +17,9 @@ logs:
 preflight:
 	$(COMPOSE) run --rm app
 
+smoke:
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_pipeline && python -m oaar_impl.verify_pipeline"
+
 lock:
 	uv lock
 
