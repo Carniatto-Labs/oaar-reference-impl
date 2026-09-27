@@ -142,6 +142,27 @@ services:
       retries: 12
       start_period: 5s
 
+  chat-panel:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    command: ["uvicorn", "oaar_impl.chat_panel:app", "--host", "0.0.0.0", "--port", "8090"]
+    environment:
+      OAAR_POSTGRES_DSN: postgresql://oaar:oaar@postgres:5432/oaar
+      OAAR_OTLP_ENDPOINT: http://otel-collector:4318
+      OAAR_GRAFANA_URL: http://localhost:3000
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      product-api:
+        condition: service_healthy
+      payment-api:
+        condition: service_healthy
+
   app:
     build:
       context: .

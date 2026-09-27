@@ -1,8 +1,11 @@
+import json
 import time
+import urllib.error
+import urllib.request
 
 from fastapi import FastAPI, HTTPException, Request
 from opentelemetry import trace
-from opentelemetry.propagate import extract
+from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import SpanKind
 
 from oaar_impl.otel_setup import configure_telemetry
@@ -11,7 +14,40 @@ configure_telemetry()
 
 app = FastAPI(title="oaar-payment-api")
 
-_gateway = {"latency_s": 0.15, "decline_codes": {"gateway_declined": "05"}}
+PRODUCT_API = "http://product-api:8082"
+_gateway = {
+    "latency_s": 0.15,
+    "decline_codes": {"insufficient_limit": "51", "card_blocked": "57", "gateway_declined": "05", "out_of_stock": "29"},
+}
+BRAND_LIMITS = {"visa": 1500.0, "mastercard": 800.0, "amex": 2000.0, "elo": 500.0, "unknown": 300.0}
+
+
+class _InventoryError(RuntimeError):
+    def __init__(self, reason: str, stage: str, status_code: int):
+        super().__init__(f"inventory: {reason} at {stage}")
+        self.reason = reason
+        self.stage = stage
+        self.status_code = status_code
+
+
+def _product_call(path: str, payload: dict) -> dict:
+    headers = {"Content-Type": "application/json"}
+    inject(headers)
+    request = urllib.request.Request(
+        f"{PRODUCT_API}{path}", data=json.dumps(payload).encode(), headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as exc:
+        detail = json.loads(exc.read()).get("detail", {})
+        if isinstance(detail, dict):
+            raise _InventoryError(
+                detail.get("reason", "not_found"),
+                detail.get("stage", "product_catalog"),
+                exc.code,
+            ) from None
+        raise _InventoryError("not_found", "product_catalog", exc.code) from None
 
 
 @app.get("/health")
@@ -23,32 +59,69 @@ def health():
 async def create_payment(request: Request):
     body = await request.json()
     context = extract(dict(request.headers))
+    order_id = body.get("order_id", "")
+    amount = float(body.get("amount", 0.0))
+    method = body.get("method", "")
+    card_last4 = body.get("card_last4", "")
+    card_brand = body.get("card_brand", "unknown")
+    product_id = body.get("product_id")
+    quantity = int(body.get("quantity", 1))
     with trace.get_tracer("payment-api").start_as_current_span(
         "payment.process", context=context, kind=SpanKind.SERVER,
         attributes={
-            "purchase.order.id": body.get("order_id", ""),
-            "purchase.amount": body.get("amount", 0.0),
-            "purchase.payment.method": body.get("method", ""),
-            "purchase.payment.last4": body.get("card_last4", ""),
+            "purchase.order.id": order_id,
+            "purchase.amount": amount,
+            "purchase.payment.method": method,
+            "purchase.payment.last4": card_last4,
+            "purchase.payment.brand": card_brand,
         },
     ) as span:
         time.sleep(_gateway["latency_s"])
-        if body.get("force") == "declined":
-            reason = body.get("decline_reason", "gateway_declined")
-            stage = "acquirer_authorization"
+
+        reserved = False
+        if product_id:
+            try:
+                _product_call(f"/products/{product_id}/reserve", {"quantity": quantity})
+                reserved = True
+                span.set_attribute("product.reserved", True)
+            except _InventoryError as exc:
+                span.set_attribute("payment.status", "declined")
+                span.set_attribute("payment.failure.reason", exc.reason)
+                span.set_attribute("payment.failure.stage", exc.stage)
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "status": "declined",
+                        "reason": exc.reason,
+                        "stage": exc.stage,
+                        "gateway_code": _gateway["decline_codes"].get(exc.reason, "XX"),
+                    },
+                ) from None
+
+        def _auth_decline(reason: str):
+            if reserved:
+                _product_call(f"/products/{product_id}/release", {"quantity": quantity})
             span.set_attribute("payment.status", "declined")
             span.set_attribute("payment.failure.reason", reason)
-            span.set_attribute("payment.failure.stage", stage)
+            span.set_attribute("payment.failure.stage", "acquirer_authorization")
             span.set_attribute("payment.gateway.code", _gateway["decline_codes"].get(reason, "XX"))
             raise HTTPException(
                 status_code=402,
                 detail={
                     "status": "declined",
                     "reason": reason,
-                    "stage": stage,
+                    "stage": "acquirer_authorization",
                     "gateway_code": _gateway["decline_codes"].get(reason, "XX"),
                 },
             )
+
+        if card_last4 == "0000":
+            _auth_decline("card_blocked")
+        limit = BRAND_LIMITS.get(card_brand, BRAND_LIMITS["unknown"])
+        span.set_attribute("purchase.payment.limit", limit)
+        if amount > limit:
+            _auth_decline("insufficient_limit")
+
         payment_id = f"pay-{int(time.time() * 1000)}"
         span.set_attribute("payment.status", "approved")
         span.set_attribute("payment.id", payment_id)
