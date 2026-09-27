@@ -2,7 +2,17 @@
 
 Reference implementation of the [Observability Architecture for Agentic Runtimes (OAAR) RFC](https://github.com/Carniatto-Labs/oaar) on a real durable agent runtime (LangGraph 1.0, Temporal planned as second framework).
 
-**Status:** phase 4 complete — **first milestone: the three denominators validated** on a real durable runtime. `make abc-smoke` (8/8 PASS): Run A checkpoints and fails before producing the artifact, Run B restores A's last checkpoint and completes the same logical operation (`resume` link, `agent.operation.id` on events), Run C completes on a fresh thread → execution completion **2/3**, artifact production **2/2**, customer acceptance **1/2** observed post-run via `agent.outcome.observed` events (declined + accepted). `make abc-unknown-smoke` (8/8 PASS): pending/unknown at the reporting cut is not counted as failure. Earlier: langgraph smoke 6/6, pipeline smoke 5/5. See [PLAN.md](PLAN.md).
+**Status:** phase 5 complete — all five runtime scenarios validated on a real durable runtime. Earlier phases: three-denominator ABC validation (phase 4, `make abc-smoke` / `make abc-unknown-smoke`, 8/8 PASS each), langgraph checkpoint adapter (phase 3, 6/6), pipeline smoke (5/5).
+
+Phase 5 scenarios (each `make <target>` = demo + automated verification against Tempo/Prometheus/Loki):
+
+| Scenario | Target | Validates |
+| --- | --- | --- |
+| Human-in-the-loop resume | `make hitl-smoke` (5/5) | `agent.run.waiting` is a distinct lifecycle event — a run parked for human approval is not a failure; resume restores the exact waiting checkpoint (`resume` link + checkpoint age measured from telemetry) |
+| Compensation saga | `make saga-smoke` (3/3) | Partial rollback after mid-flight failure: confirmed effect span + `compensates` link from the compensation span, `agent.compensation.outcome=partial`, compensation rate metrics |
+| Delegation fan-out | `make fanout-smoke` (4/4) | Parent/child execution identity: `parent_run.id` on children, `delegates_to` + `aggregates` links from parent to both child traces |
+| Guardrail block | `make guardrail-smoke` (4/4) | Pre-execution block → `agent.run.cancelled` (not failed); guardrail evaluation span; sensitive source content provably absent from traces AND logs |
+| MCP retry + idempotent dedup | `make mcp-smoke` (5/5) | W3C trace context propagation to an MCP server, retry correlation via `retries` link, deduplication observable per attempt (`agent.tool.deduplication.status`) |
 
 ## Purpose
 

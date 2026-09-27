@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke lock clean
+.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke lock clean
 
 up:
 	$(COMPOSE) up -d --wait
@@ -31,6 +31,26 @@ abc-smoke:
 abc-unknown-smoke:
 	$(COMPOSE) build app
 	$(COMPOSE) run --rm app sh -c "OAAR_ABC_CONTEXT_PATH=/tmp/oaar-abc-unknown-context.json python -m oaar_impl.demo_variant_q_unknown && OAAR_ABC_CONTEXT_PATH=/tmp/oaar-abc-unknown-context.json python -m oaar_impl.verify_abc_checkpoint"
+
+hitl-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_hitl_resume && python -m oaar_impl.verify_hitl_resume"
+
+saga-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_compensation_saga && python -m oaar_impl.verify_compensation_saga"
+
+fanout-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_delegation_fanout && python -m oaar_impl.verify_delegation_fanout"
+
+guardrail-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_guardrail_block && python -m oaar_impl.verify_guardrail_block"
+
+mcp-smoke:
+	$(COMPOSE) build app mcp-server
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_mcp_retry_dedup && python -m oaar_impl.verify_mcp_retry_dedup"
 
 lock:
 	uv lock

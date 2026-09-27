@@ -231,6 +231,7 @@ def tool_span(
     idempotency_key: str | None = None,
     deduplication_status: str | None = None,
     retry_count: int = 0,
+    links: list | None = None,
 ):
     if effect_class not in EFFECT_CLASSES:
         raise SemanticViolation(
@@ -249,7 +250,7 @@ def tool_span(
     if deduplication_status:
         attributes[ATTR_TOOL_DEDUP_STATUS] = deduplication_status
     with tracer().start_as_current_span(
-        TOOL_SPAN_NAME, kind=SpanKind.CLIENT, attributes=attributes
+        TOOL_SPAN_NAME, kind=SpanKind.CLIENT, attributes=attributes, links=links or []
     ) as span:
         yield span
 

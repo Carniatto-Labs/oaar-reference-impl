@@ -52,14 +52,16 @@ def durable_run(
     workflow_name: str,
     workflow_version: str,
     *,
+    run_id: str | None = None,
+    links: list | None = None,
     resume_from: RunHandle | None = None,
     resume_reason: str | None = None,
     parent: RunHandle | None = None,
     logger: logging.Logger | None = None,
 ):
     logger = logger or logging.getLogger("oaar.run")
-    run_id = new_id("run")
-    links = []
+    run_id = run_id or new_id("run")
+    links = list(links or [])
     kwargs = {}
     cause = "invocation"
     if resume_from is not None:
