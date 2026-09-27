@@ -1,0 +1,81 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "green", "value": null } ] } } },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum(oaar_purchases_total)", "legendFormat": "purchases", "refId": "A" } ],
+      "title": "Purchase orders",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 10, "x": 6, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_purchase_outcome) (oaar_purchases_total)", "legendFormat": "{{agent_purchase_outcome}}", "refId": "A" } ],
+      "title": "Purchases by business outcome — accepted vs declined (RFC §10, §11)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_run_outcome) (oaar_runs_total{agent_runtime_workflow_name=\"scenario.purchase_flow\"})", "legendFormat": "{{agent_run_outcome}}", "refId": "A" } ],
+      "title": "Purchase workflow executions (declined ≠ failed)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "align": "auto", "cellHeight": "sm" }, "noValue": "0" }, "overrides": [] },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "id": 4,
+      "options": { "cellHeight": "sm", "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false }, "showHeader": true },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "exemplar": false, "expr": "sum by (gen_ai_tool_name, agent_tool_effect_class) (oaar_tool_calls_total{gen_ai_tool_name=~\"product.lookup|payment.charge\"})", "format": "table", "instant": true, "legendFormat": "", "refId": "A" } ],
+      "title": "Purchase tool calls: product.lookup × payment.charge",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "oaar-loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 14, "w": 12, "x": 12, "y": 5 },
+      "id": 5,
+      "options": { "dedupStrategy": "none", "enableLogDetails": true, "prettifyLogMessage": false, "showCommonLabels": false, "showLabels": false, "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [ { "datasource": { "type": "loki", "uid": "oaar-loki" }, "expr": "{service_name=\"oaar-impl\"} |= \"purchase \"", "queryType": "range", "refId": "A" } ],
+      "title": "Purchase log lines: order, product, payment method, status (no PAN)",
+      "type": "logs"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 14 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_decision_kind) (oaar_decisions_total{agent_decision_kind=\"select_tool\"})", "legendFormat": "{{agent_decision_kind}}", "refId": "A" } ],
+      "title": "Select-tool decisions on the purchase path (RFC §7)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 40,
+  "tags": ["oaar", "purchase"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "OAAR · Purchase Flow (e-commerce)",
+  "uid": "oaar-purchase",
+  "version": 2,
+  "weekStart": ""
+}

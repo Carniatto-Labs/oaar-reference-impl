@@ -21,6 +21,7 @@ ATTR_TOOL_EFFECT_CLASS = "agent.tool.effect.class"
 ATTR_TOOL_DEDUP_STATUS = "agent.tool.deduplication.status"
 ATTR_COMPENSATION_OUTCOME = "agent.compensation.outcome"
 ATTR_GUARDRAIL_OUTCOME = "agent.guardrail.outcome"
+ATTR_PURCHASE_OUTCOME = "agent.purchase.outcome"
 
 ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
     {
@@ -33,6 +34,7 @@ ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
         ATTR_TOOL_DEDUP_STATUS,
         ATTR_COMPENSATION_OUTCOME,
         ATTR_GUARDRAIL_OUTCOME,
+        ATTR_PURCHASE_OUTCOME,
     }
 )
 
@@ -96,6 +98,9 @@ def _get_instruments():
             "guardrail_evaluations": _meter.create_counter(
                 "oaar.guardrail.evaluations", description="Guardrail evaluations by outcome"
             ),
+            "purchases": _meter.create_counter(
+                "oaar.purchases", description="Purchase orders by business outcome"
+            ),
         }
     return _cached_instruments
 
@@ -138,3 +143,9 @@ def record_guardrail(outcome: str):
     attrs = {ATTR_GUARDRAIL_OUTCOME: outcome}
     enforce_metric_attributes(attrs)
     _get_instruments()["guardrail_evaluations"].add(1, attrs)
+
+
+def record_purchase(outcome: str):
+    attrs = {ATTR_PURCHASE_OUTCOME: outcome}
+    enforce_metric_attributes(attrs)
+    _get_instruments()["purchases"].add(1, attrs)

@@ -63,6 +63,12 @@ SCENARIOS = [
         (["python", "-m", "oaar_impl.demo_mcp_retry_dedup"], ["python", "-m", "oaar_impl.verify_mcp_retry_dedup"], None),
     ),
     (
+        "purchase",
+        "§4 §7 §8 §10 §11",
+        "E-commerce purchase: product + payment APIs in one trace; approved vs declined mapped (product, method, failure stage)",
+        (["python", "-m", "oaar_impl.demo_purchase_flow"], ["python", "-m", "oaar_impl.verify_purchase_flow"], None),
+    ),
+    (
         "grafana",
         "§13",
         "Grafana reflects the run: provisioned dashboards + datasource queries return scenario data",

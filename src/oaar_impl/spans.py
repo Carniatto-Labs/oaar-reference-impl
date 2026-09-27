@@ -65,6 +65,8 @@ ATTR_GUARDRAIL_POLICY_VERSION = "agent.guardrail.policy.version"
 ATTR_GUARDRAIL_OUTCOME = "agent.guardrail.outcome"
 ATTR_GUARDRAIL_RISK_CATEGORY = "agent.guardrail.risk.category"
 
+ATTR_PURCHASE_OUTCOME = "agent.purchase.outcome"
+
 ATTR_LINK_TYPE = "agent.runtime.link.type"
 ATTR_LOGICAL_OUTCOME = "agent.runtime.logical.outcome"
 ATTR_LOG_CATEGORY = "agent.log.category"

@@ -9,6 +9,7 @@ GRAFANA = "http://grafana:3000"
 EXPECTED_DASHBOARDS = {
     "OAAR · Runtime & Execution Identity": "oaar-runtime",
     "OAAR · Logical Outcomes, Effects & Controls": "oaar-effects",
+    "OAAR · Purchase Flow (e-commerce)": "oaar-purchase",
 }
 
 
