@@ -23,6 +23,23 @@ Phase 6 additions:
   - Datasources (Prometheus `oaar-prom`, Tempo `oaar-tempo`, Loki `oaar-loki`) and dashboards are fully provisioned from `grafana/`.
   - `make dash-smoke` proves the reflection programmatically: dashboards exist, and the exact panel queries return scenario data through Grafana's datasource proxy.
 
+## Validation matrix (RFC §4–§13 → evidence)
+
+Every normative section of the RFC is exercised by at least one check. The `make validate` output prints this matrix with live pass/fail per row.
+
+| RFC § | Normative requirement | Evidence (scenario → check) |
+| --- | --- | --- |
+| §4 Run identity & correlation | Root `agent.run` span with `run.id`, `thread.id`, `workflow.name/version`, `parent_run.id`; `trace_id` connects distributed causality | All scenarios carry the identity block; fanout: children reference `parent_run.id`; purchase: one `trace_id` across agent + product-api + payment-api |
+| §5 Run lifecycle | Events for created/started/waiting/completed/failed/cancelled/resumed/compensating/compensated, each with cause, actor, state version | hitl (waiting → resumed, checkpoint age from telemetry), guardrail (cancelled ≠ failed), saga (compensating → compensated), purchase (declined ≠ failed) |
+| §6 State & checkpoints | `agent.state.transition` events (version, from/to, changed_keys, diff_hash, reason, actor); `agent.checkpoint.save/restore` spans with id/thread/version/backend/duration/outcome; restore = NEW run + link | langgraph (versions monotonic 1→2→3; restore span + `resume` link; no checkpoint after restore), abc (Run B restores the exact failed checkpoint), hitl (checkpoint age ≥ 1.5 s measured from span timestamps) |
+| §7 Decisions & the agentic loop | `agent.decision` spans with closed kind vocabulary (`plan/select_tool/delegate/respond/compensate/terminate`), sanitized basis, iteration id | fanout (`delegate`), purchase (`select_tool` with price in basis), guardrail (`terminate`), saga (`compensate`); the semantic layer REJECTS unknown kinds (`confirm_purchase` → SemanticViolation) and private chain-of-thought in basis |
+| §8 Tools & MCP | `gen_ai.execute_tool` + `gen_ai.tool.*`; effect class ∈ read_only/idempotent_write/mutable_write; retry.count, idempotency key, deduplication status; W3C propagation | mcp (retry + dedup observable per attempt), purchase (3 services in one trace); semantic layer rejects `mutable` (closed vocabulary) |
+| §9 External effects & compensation | `agent.effect` span (resource id, mutation type, idempotency key, confirmation, originating decision/tool, compensation availability); `agent.compensate` linked via `compensates` + `agent.effect.id`; outcomes succeeded/failed/partial | saga (flight compensated, hotel+car survive → `partial`), purchase (charge effect only when confirmed; declined → no effect at all) |
+| §10 Non-linear causality | Typed span links only: `resume`, `delegates_to`, `triggered_by`, `compensates`, `retries`, `aggregates` | langgraph (`resume`), fanout (`delegates_to` + `aggregates`), saga (`compensates`), mcp (`retries`) |
+| §11 Metrics | Run duration, decision/tool/compensation/guardrail counts, outcome rates; unique ids MUST NOT be metric dimensions | metrics allowlist rejects `run.id` as label (SemanticViolation; cardinality bounded at 788 series); denominators kept separate: waiting/cancelled/declined never count as `failed` (abc-unknown, hitl, purchase: `failed` delta 0 while `completed` +2); business outcomes as separate low-cardinality series (`oaar.purchases_total{outcome}`) |
+| §12 Logs, privacy, guardrails | Logs carry trace/span/run/thread ids; content is opt-in; `agent.guardrail.evaluate` with policy id@version, no sensitive source | pipeline (50 correlated Loki lines; collector redacts `sk-` key + email), guardrail (bait policy name + body absent from traces AND logs), purchase (full PAN never present) |
+| §13 Collection architecture | Collector is the enforcement point (validation, redaction, filtering, routing) before backends; apps minimize at source | compose: OTLP → collector → Tempo/Prometheus/Loki; pipeline proves redaction happens at the collector; grafana scenario + dash-smoke prove backends serve the scenario data |
+
 ## Purpose
 
 1. Validate every normative requirement of RFC 0.1.0 (Run identity, lifecycle, checkpoints, decisions, tools/MCP, external effects, compensation, causality links, metrics, privacy, collection architecture).
@@ -43,6 +60,7 @@ This repository exists to demonstrate and test those distinctions on a productio
 ## Documentation
 
 - [PLAN.md](PLAN.md) — full implementation plan, decisions, and acceptance criteria
+- [discussion-1-reply.md](discussion-1-reply.md) — draft reply for [Discussion #1](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes/discussions/1), presenting the measured denominator evidence
 - [OAAR RFC](https://github.com/Carniatto-Labs/oaar/blob/main/RFC.md) — the specification under validation
 
 ## License
