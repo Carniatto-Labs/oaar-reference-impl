@@ -2,7 +2,7 @@
 
 Reference implementation of the [Observability Architecture for Agentic Runtimes (OAAR) RFC](https://github.com/Carniatto-Labs/oaar) on a real durable agent runtime (LangGraph 1.0, Temporal planned as second framework).
 
-**Status:** phase 2 complete — telemetry flows end-to-end, pipeline smoke 5/5 PASS (`make smoke`). See [PLAN.md](PLAN.md).
+**Status:** phase 3 complete — LangGraph adapter (`OtelCheckpointer` + `durable_run`) validated on a real durable runtime: checkpoint save/restore spans, resume link across traces, and monotonic state versions across runs, langgraph smoke 6/6 PASS (`make langgraph-smoke`). Earlier: pipeline smoke 5/5 PASS (`make smoke`). See [PLAN.md](PLAN.md).
 
 ## Purpose
 

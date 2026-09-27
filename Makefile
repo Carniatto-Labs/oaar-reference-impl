@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down ps logs preflight lock clean
+.PHONY: up down ps logs preflight smoke langgraph-smoke lock clean
 
 up:
 	$(COMPOSE) up -d --wait
@@ -19,6 +19,10 @@ preflight:
 
 smoke:
 	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_pipeline && python -m oaar_impl.verify_pipeline"
+
+langgraph-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_langgraph && python -m oaar_impl.verify_langgraph"
 
 lock:
 	uv lock
