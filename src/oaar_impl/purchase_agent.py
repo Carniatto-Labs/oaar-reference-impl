@@ -1,9 +1,19 @@
+import contextvars
+import json
 import logging
 import os
 import re
 import time
 from collections.abc import Iterator
+from typing import Annotated, Any, TypedDict
+from urllib.parse import quote
 
+from langchain_core.messages import AnyMessage, ToolMessage
+from langchain_core.tools import tool
+from langchain_ollama import ChatOllama
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import add_messages
+from opentelemetry import trace
 from opentelemetry.propagate import inject
 from opentelemetry.trace import Status, StatusCode
 
@@ -15,104 +25,236 @@ from oaar_impl.run_adapter import durable_run
 from oaar_impl.spans import decision_span, effect_span, log_with_context, new_id, tool_span
 
 WORKFLOW_NAME = "agent.purchase"
-WORKFLOW_VERSION = "0.1.0"
+WORKFLOW_VERSION = "0.2.0"
 PRODUCT_API = "http://product-api:8082"
 PAYMENT_API = "http://payment-api:8083"
-
-BRANDS = {
-    "visa": re.compile(r"^4"),
-    "mastercard": re.compile(r"^(5[1-5]|2[2-7])"),
-    "amex": re.compile(r"^3[47]"),
-    "elo": re.compile(r"^(636368|438935|504175|451416|636297|5067|4576|4011)"),
-}
+MODEL_NAME = os.environ.get("OAAR_MODEL", "gemma4:12b-mlx")
+OLLAMA_BASE_URL = os.environ.get("OAAR_OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+MAX_STEPS = 20
 
 logger = logging.getLogger("oaar.agent")
 
+_current_order: contextvars.ContextVar[str] = contextvars.ContextVar("oaar_purchase_order", default="")
 
-class PaymentDeclined(RuntimeError):
-    def __init__(self, reason: str, stage: str, gateway_code: str):
-        super().__init__(f"payment declined: {reason} at {stage}")
-        self.reason = reason
-        self.stage = stage
-        self.gateway_code = gateway_code
+_BRAND_PATTERNS = [
+    ("amex", re.compile(r"^3[47]")),
+    ("elo", re.compile(r"^(636368|438935|504175|451416|636297|5067|4576|4011)")),
+    ("mastercard", re.compile(r"^(5[1-5]|2[2-7])")),
+    ("visa", re.compile(r"^4")),
+]
+
+SYSTEM_PROMPT = (
+    "You are a purchase assistant for an online store. You complete purchases by calling tools, step by step.\n"
+    "Rules:\n"
+    "- ALWAYS call search_products first to find what the user wants; then charge_card to complete the purchase.\n"
+    "- quantity defaults to 1 when the user does not specify an amount.\n"
+    "- The card number must come from the user's message. If no card number is present, ask the user for it and call no tools.\n"
+    "- Never invent product ids: use ids returned by search_products.\n"
+    "- If charge_card returns status=declined, tell the user the reason and the stage (no retry).\n"
+    "- Final answer: one short sentence stating what was bought, the total, the card brand with last 4 digits, and the outcome (approved or declined)."
+)
 
 
-def detect_brand(pan: str) -> str:
-    for brand, pattern in BRANDS.items():
+def _detect_brand(pan: str) -> str:
+    for brand, pattern in _BRAND_PATTERNS:
         if pattern.match(pan):
             return brand
     return "unknown"
 
 
-def _digits(text: str) -> str:
-    candidates = re.findall(r"\d[\d\s]{11,22}\d", text)
-    if not candidates:
-        return ""
-    return re.sub(r"\s", "", candidates[-1])
-
-
-WORD_NUMBERS = {"one": 1, "a": 1, "um": 1, "uma": 1, "two": 2, "dois": 2, "duas": 2, "three": 3, "tres": 3, "quatro": 4, "four": 4, "five": 5, "cinco": 5}
-
-
-def parse_intent(prompt: str) -> dict:
-    pan = _digits(prompt)
-    cleaned = re.sub(r"\d[\d\s.\-]{11,22}\d", " ", prompt)
-    quantity = 1
-    match = re.search(r"(\d+)\s*(?:x\s+|unidades?\s+(?:de\s+)?|units?\s+of\s+)", cleaned, re.IGNORECASE)
-    if match:
-        quantity = min(int(match.group(1)), 10)
-        cleaned = cleaned[: match.start()] + " " + cleaned[match.end():]
-    else:
-        for word, value in WORD_NUMBERS.items():
-            match = re.search(rf"\b{word}\b\s+(?:x\s+)?", cleaned, re.IGNORECASE)
-            if match and re.search(rf"\b{word}\b", cleaned, re.IGNORECASE):
-                quantity = value
-                cleaned = cleaned[: match.start()] + " " + cleaned[match.end():]
-                break
-    cleaned = re.sub(
-        r"\b(?:com|using|with|no|na|pelo|pela|cart[aã]o|card|credit|credito|cr[eé]dito|visa|mastercard|master|amex|elo)\b",
-        " ", cleaned, flags=re.IGNORECASE,
+def _sanitize(text: str) -> str:
+    return re.sub(
+        r"\d[\d\s.\-]{11,22}\d",
+        lambda mo: "****" + re.sub(r"\D", "", mo.group(0))[-4:],
+        text,
     )
-    cleaned = re.sub(
-        r"^(?:please\s+)?(?:i\s+(?:want|would\s+like)\s+(?:to\s+)?(?:buy|purchase)|can\s+you\s+buy|buy|purchase|get|order|quero|queria|gostaria\s+de\s+comprar|comprar|compre|compra|pe[çc]o|me\s+traz|adiciona)\s+",
-        " ", cleaned.strip(), flags=re.IGNORECASE,
-    )
-    query = re.sub(r"\s+", " ", cleaned).strip(" ,.!?:;-\n")
-    if not query:
-        query = prompt.strip()
-    return {
-        "query": query,
-        "quantity": quantity,
-        "pan": pan,
-        "last4": pan[-4:] if pan else "",
-        "brand": detect_brand(pan) if pan else "",
-    }
 
 
-def _http_json(method: str, url: str, payload: dict | None = None) -> dict:
-    import json as _json
+def _api(method: str, url: str, payload: dict | None = None) -> dict:
     import urllib.error
     import urllib.request
 
-    headers = {}
+    headers: dict = {}
     inject(headers)
     data = None
     if payload is not None:
         headers["Content-Type"] = "application/json"
-        data = _json.dumps(payload).encode()
+        data = json.dumps(payload).encode()
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=10) as resp:
-            return _json.loads(resp.read())
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            return json.loads(resp.read())
     except urllib.error.HTTPError as exc:
-        detail = _json.loads(exc.read()).get("detail", {})
-        if isinstance(detail, dict):
-            raise PaymentDeclined(
-                detail.get("reason", "unknown"),
-                detail.get("stage", "unknown"),
-                detail.get("gateway_code", "XX"),
-            ) from None
-        raise PaymentDeclined("unknown", "unknown", "XX") from None
+        try:
+            detail = json.loads(exc.read()).get("detail", {})
+        except Exception:
+            detail = {}
+        if isinstance(detail, dict) and detail.get("reason"):
+            return {"status": "declined", **detail}
+        return {"status": "error", "reason": f"http {exc.code}", "stage": "unknown"}
+
+
+@tool
+def search_products(query: str) -> str:
+    """Search the store catalog by free text. Returns matching products with id, name, price and stock."""
+    return json.dumps(_api("GET", f"{PRODUCT_API}/products/search?q={quote(query)}").get("results", []))
+
+
+@tool
+def charge_card(product_id: str, quantity: int, card_number: str) -> str:
+    """Charge the customer's card for quantity units of product_id. card_number is the full card digits. Returns the payment result."""
+    pan = re.sub(r"\D", "", card_number)
+    last4 = pan[-4:]
+    brand = _detect_brand(pan)
+    order_id = _current_order.get("") or f"order-{int(time.time() * 1000)}"
+    product = (_api("GET", f"{PRODUCT_API}/products/{product_id}").get("product") or {})
+    if not product:
+        result = {"status": "declined", "reason": "not_found", "stage": "product_catalog", "product": product_id}
+    else:
+        amount = round(float(product["price"]) * max(int(quantity), 1), 2)
+        response = _api("POST", f"{PAYMENT_API}/payments", {
+            "order_id": order_id,
+            "amount": amount,
+            "method": "credit_card",
+            "card_last4": last4,
+            "card_brand": brand,
+            "product_id": product_id,
+            "quantity": max(int(quantity), 1),
+        })
+        result = {**response, "product": product.get("name"), "amount": amount,
+                  "card_brand": brand, "card_last4": last4, "order_id": order_id}
+    return json.dumps(result)
+
+
+TOOLS = [search_products, charge_card]
+_TOOL_EFFECT = {"search_products": "read_only", "charge_card": "mutable_write"}
+_TOOL_LABEL = {"search_products": "product.search", "charge_card": "payment.charge"}
+
+
+class AgentState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    charges: dict
+
+
+def _model() -> ChatOllama:
+    return ChatOllama(model=MODEL_NAME, base_url=OLLAMA_BASE_URL, temperature=0)
+
+
+def _agent_node(state: AgentState) -> dict:
+    messages = state["messages"]
+    model = _model()
+    tracer = trace.get_tracer("oaar.agent")
+    with tracer.start_as_current_span(
+        f"chat {MODEL_NAME}",
+        attributes={
+            "gen_ai.system": "ollama",
+            "gen_ai.request.model": MODEL_NAME,
+            "gen_ai.request.temperature": 0,
+        },
+    ) as inference:
+        response = model.bind_tools(TOOLS).invoke(messages)
+        usage = getattr(response, "usage_metadata", None) or {}
+        if usage.get("input_tokens"):
+            inference.set_attribute("gen_ai.usage.input_tokens", usage["input_tokens"])
+        if usage.get("output_tokens"):
+            inference.set_attribute("gen_ai.usage.output_tokens", usage["output_tokens"])
+
+    calls = getattr(response, "tool_calls", None) or []
+    kind = "select_tool" if calls else "respond"
+    basis = _sanitize(_content_preview(response, calls))
+    iteration = sum(1 for msg in messages if getattr(msg, "tool_calls", None) is not None and msg.type == "ai")
+    with decision_span(new_id("dec"), kind, basis, "tool_call" if calls else "final_answer", iteration):
+        pass
+    m.record_decision(kind)
+    return {"messages": [response]}
+
+
+def _content_preview(message: AnyMessage, calls: list) -> str:
+    if calls:
+        parts = []
+        for c in calls:
+            args = ", ".join(f"{k}={v}" for k, v in (c.get("args") or {}).items())
+            parts.append(f"{c['name']}({args})")
+        return "next: " + "; ".join(parts)
+    content = getattr(message, "content", "") or ""
+    if isinstance(content, list):
+        content = " ".join(str(part) for part in content)
+    return f"answer: {content}"
+
+
+def _tools_node(state: AgentState) -> dict:
+    last = state["messages"][-1]
+    charges = dict(state.get("charges") or {})
+    outputs = []
+    for call in getattr(last, "tool_calls", None) or []:
+        name = call["name"]
+        label = _TOOL_LABEL.get(name, name)
+        effect = _TOOL_EFFECT.get(name, "read_only")
+        with tool_span(new_id("call"), label, effect) as span:
+            span.set_attribute("gen_ai.tool.name", name)
+            _set_tool_attrs(span, name, call.get("args", {}))
+            try:
+                tool_impl = next(t for t in TOOLS if t.name == name)
+                raw = tool_impl.invoke(call)
+                if isinstance(raw, ToolMessage):
+                    raw = raw.content
+                payload = json.loads(raw if isinstance(raw, str) else json.dumps(raw))
+            except Exception as exc:
+                payload = {"status": "error", "reason": str(exc), "stage": "tool_execution"}
+            _apply_tool_outcome(span, name, payload)
+            m.record_tool_call(label, effect, "not_attempted")
+            if name == "charge_card" and isinstance(payload, dict):
+                charges[payload.get("status", "error")] = payload
+                if payload.get("status") == "approved":
+                    with effect_span(new_id("eff"), f"charge:{payload.get('order_id', '')}", "create",
+                                     confirmation_status="confirmed", compensation_available=True):
+                        pass
+            outputs.append(ToolMessage(content=json.dumps(payload), tool_call_id=call["id"], name=name))
+    return {"messages": outputs, "charges": charges}
+
+
+def _route(state: AgentState) -> str:
+    return "tools" if getattr(state["messages"][-1], "tool_calls", None) else END
+
+
+def _build_graph(checkpointer: OtelCheckpointer):
+    graph = StateGraph(AgentState)
+    graph.add_node("agent", _agent_node)
+    graph.add_node("tools", _tools_node)
+    graph.add_edge(START, "agent")
+    graph.add_conditional_edges("agent", _route, {"tools": "tools", END: END})
+    graph.add_edge("tools", "agent")
+    return graph.compile(checkpointer=checkpointer)
+
+
+def _set_tool_attrs(span: Any, name: str, args: dict) -> None:
+    if name == "search_products":
+        span.set_attribute("purchase.product.query", str(args.get("query", ""))[:200])
+    elif name == "charge_card":
+        pan = re.sub(r"\D", "", str(args.get("card_number", "")))
+        span.set_attribute("purchase.product.id", str(args.get("product_id", "")))
+        span.set_attribute("purchase.quantity", int(args.get("quantity", 1) or 1))
+        span.set_attribute("purchase.payment.last4", pan[-4:])
+        span.set_attribute("purchase.payment.brand", _detect_brand(pan))
+
+
+def _apply_tool_outcome(span: Any, name: str, payload: Any) -> None:
+    if not isinstance(payload, dict):
+        return
+    status = payload.get("status")
+    if status == "declined":
+        span.set_attribute("purchase.payment.status", "declined")
+        span.set_attribute("payment.failure.reason", payload.get("reason", "unknown"))
+        span.set_attribute("payment.failure.stage", payload.get("stage", "unknown"))
+        exc = RuntimeError(f"declined: {payload.get('reason')} at {payload.get('stage')}")
+        span.record_exception(exc)
+        span.set_status(Status(StatusCode.ERROR, f"declined: {payload.get('reason')}"))
+    elif status == "approved":
+        span.set_attribute("purchase.payment.status", "approved")
+        span.set_attribute("purchase.amount", payload.get("amount", 0.0))
+        span.set_attribute("purchase.product.name", str(payload.get("product", "")))
+        span.set_attribute("purchase.payment.method", "credit_card")
+        span.set_attribute("payment.id", str(payload.get("payment_id", "")))
 
 
 def _psycopg_connect(dsn: str):
@@ -122,144 +264,93 @@ def _psycopg_connect(dsn: str):
     return psycopg.connect(dsn, autocommit=True, prepare_threshold=0, row_factory=dict_row)
 
 
+def _text(message: AnyMessage) -> str:
+    content = getattr(message, "content", "") or ""
+    if isinstance(content, list):
+        content = " ".join(str(part) for part in content)
+    return content
+
+
+def _ui_events_from_update(update: dict) -> Iterator[dict]:
+    for node, payload in update.items():
+        for message in (payload or {}).get("messages", []):
+            if node == "agent":
+                calls = getattr(message, "tool_calls", None) or []
+                for c in calls:
+                    args = ", ".join(f"{k}={v}" for k, v in (c.get("args") or {}).items())
+                    yield {"type": "decision", "kind": "select_tool",
+                           "basis": _sanitize(f"{c['name']}({args})"), "outcome": "tool_call"}
+            elif node == "tools":
+                try:
+                    data = json.loads(message.content)
+                except Exception:
+                    data = {"status": "unknown"}
+                label = _TOOL_LABEL.get(message.name, message.name)
+                if isinstance(data, list):
+                    yield {"type": "tool", "name": label, "status": "ok",
+                           "detail": f"{len(data)} candidate(s) found"}
+                elif data.get("status") == "declined":
+                    yield {"type": "tool", "name": label, "status": "error",
+                           "detail": f"declined by the gateway: {data.get('reason')} (stage: {data.get('stage')}, code {data.get('gateway_code', 'XX')})"}
+                elif data.get("status") == "approved":
+                    yield {"type": "tool", "name": label, "status": "ok",
+                           "detail": f"approved: {data.get('payment_id')} auth {data.get('auth_code')} — ${data.get('amount')} to {data.get('card_brand')} ****{data.get('card_last4')}"}
+                    yield {"type": "effect", "resource": f"charge:{data.get('order_id', '')}",
+                           "status": "confirmed", "detail": "mutable_write with compensation available (refund)"}
+                elif data.get("status") == "error":
+                    yield {"type": "tool", "name": label, "status": "error",
+                           "detail": f"tool execution failed: {data.get('reason')}"}
+                elif data.get("name"):
+                    yield {"type": "tool", "name": label, "status": "ok",
+                           "detail": f"{data.get('name')} — ${data.get('price')} (stock {data.get('stock')})"}
+
+
 def run_purchase_agent(prompt: str, thread_id: str) -> Iterator[dict]:
-    """Interactive purchase agent: parses a free-form prompt, then runs the
-    observe-act-iterate loop (search -> lookup -> charge) with full OAAR
-    semantics. Yields UI events; the trace carries every decision, tool call
-    and effect exactly as the RFC requires."""
-    intent = parse_intent(prompt)
     order_id = f"order-{int(time.time() * 1000)}"
     dsn = os.environ.get("OAAR_POSTGRES_DSN", "postgresql://oaar:oaar@postgres:5432/oaar")
     conn = _psycopg_connect(dsn)
     saver = OtelCheckpointer(conn)
     saver.setup()
-    outcome = "pending"
-
-    def finish(value: str):
-        emit_outcome(f"purchase:{order_id}", "payment.authorization", "1.0.0", value)
-        m.record_purchase(value)
-
     try:
         with correlation.operation(f"purchase:{order_id}"):
             with durable_run(thread_id, WORKFLOW_NAME, WORKFLOW_VERSION, logger=logger) as run:
+                _current_order.set(order_id)
                 trace_id = format(run.span_context.trace_id, "032x")
                 yield {"type": "run", "run_id": run.run_id, "trace_id": trace_id, "order_id": order_id}
 
-                yield {
-                    "type": "decision", "kind": "plan", "iteration": 0,
-                    "basis": f"intent: query='{intent['query']}' quantity={intent['quantity']} "
-                             f"card={intent['brand'] or 'none'}****{intent['last4'] or '????'}",
-                    "outcome": "parsed" if intent["pan"] else "missing_card",
-                }
-                m.record_decision("plan")
+                graph = _build_graph(saver)
+                config = {"configurable": {"thread_id": thread_id}, "recursion_limit": MAX_STEPS}
+                final_content = ""
+                charges: dict = {}
+                for update in graph.stream(
+                    {"messages": [("system", SYSTEM_PROMPT), ("user", prompt)], "charges": {}},
+                    config, stream_mode="updates",
+                ):
+                    for event in _ui_events_from_update(update):
+                        yield event
+                    charges.update((update.get("tools") or {}).get("charges") or {})
+                    for payload in (update or {}).values():
+                        for message in (payload or {}).get("messages", []):
+                            if not getattr(message, "tool_calls", None) and _text(message):
+                                final_content = _text(message)
 
-                if not intent["pan"]:
+                if charges.get("approved"):
+                    outcome = "accepted"
+                elif charges.get("declined"):
                     outcome = "declined"
-                    run.logical_outcome = "declined"
-                    summary = "I could not find a card number in your message. Please include the full card digits so I can charge it."
-                    yield {"type": "final", "outcome": "declined", "reason": "missing_card", "stage": "intent_parsing", "order_id": order_id, "summary": summary}
-                    log_with_context(logger, logging.INFO, f"purchase {order_id} declined: reason=missing_card stage=intent_parsing", run_id=run.run_id, thread_id=thread_id, category="purchase")
-                    finish("declined")
-                    return
+                else:
+                    outcome = "pending"
+                run.logical_outcome = outcome
 
-                with tool_span(new_id("call"), "product.search", "read_only") as span:
-                    span.set_attribute("purchase.product.query", intent["query"])
-                    data = _http_json("GET", f"{PRODUCT_API}/products/search?q={intent['query'].replace(' ', '%20')}")
-                    results = data.get("results", [])
-                    span.set_attribute("purchase.product.results", len(results))
-                    m.record_tool_call("product.search", "read_only", "not_attempted")
-                yield {"type": "tool", "name": "product.search", "status": "ok",
-                       "detail": f"{len(results)} candidate(s) for '{intent['query']}'"}
-
-                if not results:
-                    outcome = "declined"
-                    run.logical_outcome = "declined"
-                    summary = f"No product matching '{intent['query']}' exists in the catalog. Nothing was charged."
-                    yield {"type": "final", "outcome": "declined", "reason": "not_found", "stage": "product_catalog", "order_id": order_id, "summary": summary}
-                    log_with_context(logger, logging.INFO, f"purchase {order_id} declined: reason=not_found stage=product_catalog query={intent['query']}", run_id=run.run_id, thread_id=thread_id, category="purchase")
-                    finish("declined")
-                    return
-
-                with tool_span(new_id("call"), "product.lookup", "read_only") as span:
-                    chosen = results[0]
-                    span.set_attribute("purchase.product.id", chosen["id"])
-                    span.set_attribute("purchase.product.name", chosen["name"])
-                    span.set_attribute("purchase.product.price", chosen["price"])
-                    detail = _http_json("GET", f"{PRODUCT_API}/products/{chosen['id']}")["product"]
-                    span.set_attribute("product.stock", detail["stock"])
-                    m.record_tool_call("product.lookup", "read_only", "not_attempted")
-                amount = round(detail["price"] * intent["quantity"], 2)
-                yield {"type": "tool", "name": "product.lookup", "status": "ok",
-                       "detail": f"{intent['quantity']}x {detail['name']} — ${detail['price']:.2f} each, total ${amount:.2f} (stock {detail['stock']})"}
-
-                yield {
-                    "type": "decision", "kind": "select_tool", "iteration": 1,
-                    "basis": f"product:{detail['id']} price:{amount} method:credit_card brand:{intent['brand']} last4:{intent['last4']}",
-                    "outcome": "charge",
-                }
-                m.record_decision("select_tool")
-
-                with tool_span(new_id("call"), "payment.charge", "mutable_write") as span:
-                    span.set_attribute("purchase.order.id", order_id)
-                    span.set_attribute("purchase.amount", amount)
-                    span.set_attribute("purchase.payment.method", "credit_card")
-                    span.set_attribute("purchase.payment.last4", intent["last4"])
-                    span.set_attribute("purchase.payment.brand", intent["brand"])
-                    span.set_attribute("purchase.product.id", detail["id"])
-                    try:
-                        payment = _http_json("POST", f"{PAYMENT_API}/payments", {
-                            "order_id": order_id,
-                            "amount": amount,
-                            "method": "credit_card",
-                            "card_last4": intent["last4"],
-                            "card_brand": intent["brand"],
-                            "product_id": detail["id"],
-                            "quantity": intent["quantity"],
-                        })
-                    except PaymentDeclined as exc:
-                        span.set_attribute("purchase.payment.status", "declined")
-                        span.set_attribute("payment.failure.reason", exc.reason)
-                        span.set_attribute("payment.failure.stage", exc.stage)
-                        span.record_exception(exc)
-                        span.set_status(Status(StatusCode.ERROR, f"declined: {exc.reason}"))
-                        m.record_tool_call("payment.charge", "mutable_write", "not_attempted")
-                        outcome = "declined"
-                        run.logical_outcome = "declined"
-                        yield {"type": "tool", "name": "payment.charge", "status": "error",
-                               "detail": f"declined by the gateway: {exc.reason} (stage: {exc.stage}, code {exc.gateway_code})"}
-                        summary = (f"Order {order_id} was declined: {exc.reason.replace('_', ' ')} "
-                                   f"at stage {exc.stage}. No charge was made and no effect was created.")
-                        yield {"type": "final", "outcome": "declined", "reason": exc.reason, "stage": exc.stage,
-                               "order_id": order_id, "summary": summary}
-                        log_with_context(logger, logging.INFO,
-                                         f"purchase {order_id} declined: product={detail['name']} method=credit_card last4={intent['last4']} reason={exc.reason} stage={exc.stage}",
-                                         run_id=run.run_id, thread_id=thread_id, category="purchase")
-                        finish("declined")
-                        return
-                    span.set_attribute("purchase.payment.status", "approved")
-                    m.record_tool_call("payment.charge", "mutable_write", "not_attempted")
-                yield {"type": "tool", "name": "payment.charge", "status": "ok",
-                       "detail": f"approved: {payment['payment_id']} auth {payment['auth_code']}"}
-
-                outcome = "accepted"
-                run.logical_outcome = "accepted"
-                effect_id = new_id("eff")
-                with effect_span(effect_id, f"charge:{order_id}", "create",
-                                 confirmation_status="confirmed", compensation_available=True):
-                    pass
-                yield {"type": "effect", "resource": f"charge:{order_id}", "status": "confirmed",
-                       "detail": "mutable_write with compensation available (refund)"}
-                yield {"type": "decision", "kind": "respond", "iteration": 2,
-                       "basis": f"payment:{payment['payment_id']} amount:{amount}", "outcome": "confirmed"}
-                m.record_decision("respond")
-                summary = (f"Order {order_id} approved: {intent['quantity']}x {detail['name']} — "
-                           f"${amount:.2f} charged to {intent['brand']} ****{intent['last4']} "
-                           f"({payment['payment_id']}, auth {payment['auth_code']}).")
-                yield {"type": "final", "outcome": "accepted", "order_id": order_id,
-                       "payment_id": payment["payment_id"], "summary": summary}
+                yield {"type": "final", "outcome": outcome, "order_id": order_id,
+                       "reason": (charges.get("declined") or {}).get("reason", ""),
+                       "stage": (charges.get("declined") or {}).get("stage", ""),
+                       "summary": final_content or "No answer produced."}
                 log_with_context(logger, logging.INFO,
-                                 f"purchase {order_id} approved: product={detail['name']} amount={amount} method=credit_card last4={intent['last4']} payment={payment['payment_id']}",
+                                 f"purchase {order_id} {outcome}: {_sanitize(final_content)[:180]}",
                                  run_id=run.run_id, thread_id=thread_id, category="purchase")
-                finish("accepted")
+                if outcome in ("accepted", "declined"):
+                    emit_outcome(f"purchase:{order_id}", "payment.authorization", "1.0.0", outcome)
+                    m.record_purchase(outcome)
     finally:
         conn.close()

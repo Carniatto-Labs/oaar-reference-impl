@@ -14,13 +14,15 @@ Reference implementation of the [Observability Architecture for Agentic Runtimes
 
 ## Interactive purchase assistant (the day-to-day use case)
 
-`make chat` starts the assistant at `http://localhost:8090`. Type a free-form prompt (English or Portuguese); the agent parses the intent and runs the observe-act-iterate loop for real — search catalog, look up the product, decide, charge the card, confirm the effect — streaming every step into the UI and every semantic into telemetry:
+`make chat` starts the assistant at `http://localhost:8090`. Type a free-form prompt (English or Portuguese) and a **real LLM** drives the agent: no scripted parsing, no stubs — a LangGraph `StateGraph` (`agent → tools → route`) with an Ollama model (`gemma4:12b-mlx` by default) doing tool-calling end to end. The agent searches the catalog, picks the product, charges the card, confirms the effect — streaming every step into the UI and every semantic into telemetry:
 
+- **A real model decides** — every turn is an actual LLM inference (emitted as a `chat {model}` GenAI inference span), followed by an `agent.decision` span (`select_tool` or `respond`) carrying the sanitized model rationale. Durable state lives in a real LangGraph `PostgresSaver` checkpoint per `thread.id` — stop the agent mid-run and the thread resumes from Postgres.
 - **One trace, three services** — agent (`oaar-impl`), `product-api` (search/lookup/reserve/release) and `payment-api` (authorization) all emit into the same W3C-propagated trace, visible in Tempo via the "Open trace in Grafana" link on each answer.
 - **Real gateway rules, not scripts** — declines happen where they happen in production: `insufficient_limit` (per-brand ceilings: visa $1500, mastercard $800, amex $2000, elo $500), `card_blocked` (cards ending `0000`), `out_of_stock` (inventory reserve inside the payment authorization), `not_found` (catalog search). The agent maps each failure to `payment.failure.reason` + `payment.failure.stage` on the charge span, emits the exception, creates **no effect**, and answers with a natural summary.
-- **Outcomes, not crashes** — every decline is a completed execution with logical outcome `declined`; only real runtime errors produce failed runs. Approved charges emit a confirmed `agent.effect` (compensation available = refund) and increment `oaar.purchases_total{outcome}`.
+- **Outcomes, not crashes** — every decline is a completed execution with logical outcome `declined`; only real runtime errors produce failed runs. `pending` is its own outcome: a prompt without a card number ends with the model asking for one, and the run is not a failure. Approved charges emit a confirmed `agent.effect` (compensation available = refund) and increment `oaar.purchases_total{outcome}`.
 - **Inventory compensation is real** — a reserve that fails at authorization is released; stock decrements only on approval.
 - Each browser session keeps one `thread.id`; every prompt is a new run in the same thread, so the Grafana Purchase Flow dashboard accumulates real, user-driven traffic.
+- Model is configurable via `OAAR_MODEL` and `OAAR_OLLAMA_BASE_URL` (defaults: `gemma4:12b-mlx`, `http://host.docker.internal:11434`); pull the model on the host with `ollama pull gemma4:12b-mlx` before the first run.
 
 RFC coverage for this flow (§4 identity, §5 lifecycle, §7 decisions, §8 tools/W3C, §9 effects, §10 outcomes, §11 metrics, §12 privacy — full PAN never enters telemetry) is now demonstrated by the assistant itself rather than a scripted test.
 

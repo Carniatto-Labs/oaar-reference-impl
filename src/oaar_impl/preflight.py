@@ -15,7 +15,6 @@ HTTP_CHECKS = [
     ("prometheus", "http://prometheus:9090/-/ready"),
     ("loki", "http://loki:3100/ready"),
     ("grafana", "http://grafana:3000/api/health"),
-    ("llm-gateway", "http://llm-gateway:8080/health"),
     ("mcp-server", "http://mcp-server:8081/health"),
 ]
 

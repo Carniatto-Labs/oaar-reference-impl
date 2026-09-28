@@ -80,20 +80,6 @@ services:
       - tempo
       - loki
 
-  llm-gateway:
-    build:
-      context: .
-      dockerfile: Dockerfile.app
-    command: ["uvicorn", "oaar_impl.llm_gateway:app", "--host", "0.0.0.0", "--port", "8080"]
-    ports:
-      - "18080:8080"
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 5s
-
   mcp-server:
     build:
       context: .
@@ -150,9 +136,12 @@ services:
     environment:
       OAAR_POSTGRES_DSN: postgresql://oaar:oaar@postgres:5432/oaar
       OAAR_OTLP_ENDPOINT: http://otel-collector:4318
-      OAAR_GRAFANA_URL: http://localhost:3000
+      OAAR_MODEL: ${OAAR_MODEL:-gemma4:12b-mlx}
+      OAAR_OLLAMA_BASE_URL: ${OAAR_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     ports:
       - "8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
@@ -177,8 +166,6 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
-      llm-gateway:
-        condition: service_healthy
       mcp-server:
         condition: service_healthy
       product-api:

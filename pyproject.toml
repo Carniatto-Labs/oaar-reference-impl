@@ -12,6 +12,7 @@ dependencies = [
     "psycopg[binary,pool]==3.3.6",
     "fastapi==0.141.1",
     "uvicorn==0.54.0",
+    "langchain-ollama>=1.1.0",
 ]
 
 [build-system]
