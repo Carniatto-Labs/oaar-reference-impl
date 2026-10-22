@@ -2,6 +2,8 @@ from opentelemetry import metrics
 
 from oaar_impl.spans import (
     ATTR_CHECKPOINT_ID,
+    ATTR_COMPENSATION_STATE,
+    ATTR_EFFECT_CONFIRMATION,
     ATTR_DECISION_ID,
     ATTR_EFFECT_ID,
     ATTR_PARENT_RUN_ID,
@@ -23,6 +25,7 @@ ATTR_COMPENSATION_OUTCOME = "agent.compensation.outcome"
 ATTR_GUARDRAIL_OUTCOME = "agent.guardrail.outcome"
 ATTR_PURCHASE_OUTCOME = "agent.purchase.outcome"
 ATTR_OUTCOME_DEFINITION = "agent.outcome.definition"
+ATTR_EFFECT_STATUS = ATTR_EFFECT_CONFIRMATION
 
 ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
     {
@@ -37,6 +40,8 @@ ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
         ATTR_GUARDRAIL_OUTCOME,
         ATTR_PURCHASE_OUTCOME,
         ATTR_OUTCOME_DEFINITION,
+        ATTR_EFFECT_STATUS,
+        ATTR_COMPENSATION_STATE,
     }
 )
 
@@ -107,6 +112,10 @@ def _get_instruments():
                 "oaar.outcome.duplicates",
                 description="Terminal outcomes suppressed as duplicates of a recorded operation outcome",
             ),
+            "effect_resolutions": _meter.create_counter(
+                "oaar.effect.resolutions",
+                description="Logical effects by confirmation status at the reporting cut",
+            ),
             "outcome_conflicts": _meter.create_counter(
                 "oaar.outcome.conflicts",
                 description="Conflicting terminal outcomes offered for an already-resolved operation",
@@ -143,10 +152,23 @@ def record_tool_call(tool_name: str, effect_class: str, deduplication_status: st
     _get_instruments()["tool_calls"].add(1, attrs)
 
 
-def record_compensation(outcome: str):
-    attrs = {ATTR_COMPENSATION_OUTCOME: outcome}
+def record_compensation(outcome: str | None, state: str = "verified"):
+    """One compensation per terminal state.
+
+    A compensation that was only requested, or whose readback never arrived, is recorded as
+    ``state=unverified`` and carries no outcome — requesting is not evidence that it happened.
+    """
+    attrs = {ATTR_COMPENSATION_STATE: state}
+    if outcome:
+        attrs[ATTR_COMPENSATION_OUTCOME] = outcome
     enforce_metric_attributes(attrs)
     _get_instruments()["compensations"].add(1, attrs)
+
+
+def record_effect_resolution(status: str):
+    attrs = {ATTR_EFFECT_STATUS: status}
+    enforce_metric_attributes(attrs)
+    _get_instruments()["effect_resolutions"].add(1, attrs)
 
 
 def record_guardrail(outcome: str):

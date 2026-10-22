@@ -44,6 +44,7 @@ def book_flight(state):
         f"flight:{state['booking_id']}",
         "create",
         confirmation_status="confirmed",
+        attempt_id=new_id("attempt"),
         compensation_available=True,
     ) as span:
         SAGA["flight_effect_id"] = effect_id

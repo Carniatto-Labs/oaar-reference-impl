@@ -74,6 +74,7 @@ def _deliver(state):
         f"proposal:{state['proposal_id']}",
         "create",
         confirmation_status="confirmed",
+        attempt_id=new_id("attempt"),
         compensation_available=True,
     ):
         pass

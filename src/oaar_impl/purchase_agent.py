@@ -230,7 +230,8 @@ def _tools_node(state: AgentState) -> dict:
                 charges[payload.get("status", "error")] = payload
                 if payload.get("status") == "approved":
                     with effect_span(new_id("eff"), f"charge:{payload.get('order_id', '')}", "create",
-                                     confirmation_status="confirmed", compensation_available=True):
+                                     confirmation_status="confirmed", attempt_id=new_id("attempt"),
+                                     compensation_available=True):
                         pass
             outputs.append(ToolMessage(content=json.dumps(payload), tool_call_id=call["id"], name=name))
     return {"messages": outputs, "charges": charges}

@@ -14,6 +14,7 @@ DECISION_SPAN_NAME = "agent.decision"
 CHECKPOINT_SAVE_SPAN_NAME = "agent.checkpoint.save"
 CHECKPOINT_RESTORE_SPAN_NAME = "agent.checkpoint.restore"
 EFFECT_SPAN_NAME = "agent.effect"
+EFFECT_OBSERVE_SPAN_NAME = "agent.effect.observe"
 COMPENSATE_SPAN_NAME = "agent.compensate"
 GUARDRAIL_SPAN_NAME = "agent.guardrail.evaluate"
 TOOL_SPAN_NAME = "gen_ai.execute_tool"
@@ -58,7 +59,19 @@ ATTR_EFFECT_ID = "agent.effect.id"
 ATTR_EFFECT_RESOURCE = "agent.effect.resource"
 ATTR_EFFECT_MUTATION_TYPE = "agent.effect.mutation.type"
 ATTR_EFFECT_CONFIRMATION = "agent.effect.confirmation.status"
+ATTR_EFFECT_ATTEMPT_ID = "agent.effect.attempt.id"
+ATTR_EFFECT_ATTEMPT_INDEX = "agent.effect.attempt.index"
+ATTR_EFFECT_EVIDENCE_ID = "agent.effect.evidence.id"
+ATTR_EFFECT_EVIDENCE_DIGEST = "agent.effect.evidence.digest"
+ATTR_EFFECT_EVIDENCE_SOURCE = "agent.effect.evidence.source"
+ATTR_EFFECT_EVIDENCE_KIND = "agent.effect.evidence.kind"
+ATTR_EFFECT_EVIDENCE_VERDICT = "agent.effect.evidence.verdict"
+ATTR_EFFECT_EVIDENCE_AGE_MS = "agent.effect.evidence.age.ms"
+ATTR_EFFECT_EVIDENCE_FRESH = "agent.effect.evidence.fresh"
+ATTR_EFFECT_RESOLUTION_REASON = "agent.effect.resolution.reason"
+ATTR_EFFECT_DISPATCH_ACK = "agent.effect.dispatch.ack"
 ATTR_COMPENSATION_OUTCOME = "agent.compensation.outcome"
+ATTR_COMPENSATION_STATE = "agent.compensation.state"
 
 ATTR_GUARDRAIL_POLICY_ID = "agent.guardrail.policy.id"
 ATTR_GUARDRAIL_POLICY_VERSION = "agent.guardrail.policy.version"
@@ -83,7 +96,21 @@ DECISION_KINDS = frozenset(
     {"plan", "select_tool", "delegate", "respond", "compensate", "terminate"}
 )
 COMPENSATION_OUTCOMES = frozenset({"succeeded", "failed", "partial", "not_applicable"})
+COMPENSATION_STATES = frozenset({"requested", "unverified", "verified"})
+CONFIRMATION_STATUSES = frozenset({"confirmed", "unconfirmed", "unresolved"})
+EVIDENCE_KINDS = frozenset(
+    {"transport_ack", "authoritative_readback", "model_estimate", "cached_state", "none"}
+)
 ARTIFACT_OUTCOMES = frozenset({"produced", "pending", "not_applicable"})
+
+EFFECT_EVENTS = frozenset(
+    {
+        "agent.effect.dispatched",
+        "agent.effect.acknowledged",
+        "agent.effect.resolved",
+        "agent.compensation.requested",
+    }
+)
 
 LIFECYCLE_EVENTS = frozenset(
     {
@@ -268,15 +295,30 @@ def effect_span(
     mutation_type: str,
     *,
     confirmation_status: str,
+    attempt_id: str,
+    attempt_index: int = 1,
+    evidence_kind: str = "transport_ack",
     decision_id: str | None = None,
     tool_call_id: str | None = None,
     compensation_available: bool,
 ):
+    if confirmation_status not in CONFIRMATION_STATUSES:
+        raise SemanticViolation(
+            f"confirmation status {confirmation_status!r} invalid; "
+            f"must be one of {sorted(CONFIRMATION_STATUSES)}"
+        )
+    if evidence_kind not in EVIDENCE_KINDS:
+        raise SemanticViolation(
+            f"evidence kind {evidence_kind!r} invalid; must be one of {sorted(EVIDENCE_KINDS)}"
+        )
     attributes = {
         ATTR_EFFECT_ID: effect_id,
         ATTR_EFFECT_RESOURCE: resource,
         ATTR_EFFECT_MUTATION_TYPE: mutation_type,
         ATTR_EFFECT_CONFIRMATION: confirmation_status,
+        ATTR_EFFECT_ATTEMPT_ID: attempt_id,
+        ATTR_EFFECT_ATTEMPT_INDEX: attempt_index,
+        ATTR_EFFECT_EVIDENCE_KIND: evidence_kind,
         "agent.effect.compensation.available": compensation_available,
     }
     if decision_id:
@@ -290,15 +332,74 @@ def effect_span(
 
 
 @contextmanager
-def compensate_span(effect_id: str, effect_context, outcome: str):
-    if outcome not in COMPENSATION_OUTCOMES:
+def effect_observe_span(
+    effect_id: str,
+    attempt_id: str,
+    *,
+    evidence_id: str,
+    evidence_digest: str,
+    source_id: str,
+    observation_kind: str,
+    verdict: str,
+    age_ms: int,
+    fresh: bool,
+):
+    """One authoritative readback attempt for an effect.
+
+    The observation is a span of its own precisely so it can exist without resolving anything:
+    a stale, unauthorized or uncorroborated readback is still an observation.
+    """
+    with tracer().start_as_current_span(
+        EFFECT_OBSERVE_SPAN_NAME,
+        kind=SpanKind.CLIENT,
+        attributes={
+            ATTR_EFFECT_ID: effect_id,
+            ATTR_EFFECT_ATTEMPT_ID: attempt_id,
+            ATTR_EFFECT_EVIDENCE_ID: evidence_id,
+            ATTR_EFFECT_EVIDENCE_DIGEST: evidence_digest,
+            ATTR_EFFECT_EVIDENCE_SOURCE: source_id,
+            ATTR_EFFECT_EVIDENCE_KIND: observation_kind,
+            ATTR_EFFECT_EVIDENCE_VERDICT: verdict,
+            ATTR_EFFECT_EVIDENCE_AGE_MS: age_ms,
+            ATTR_EFFECT_EVIDENCE_FRESH: fresh,
+        },
+    ) as span:
+        yield span
+
+
+def emit_effect_event(event: str, attributes: dict) -> None:
+    if event not in EFFECT_EVENTS:
         raise SemanticViolation(
-            f"compensation outcome {outcome!r} invalid; must be one of {sorted(COMPENSATION_OUTCOMES)}"
+            f"effect event {event!r} invalid; must be one of {sorted(EFFECT_EVENTS)}"
         )
+    _current_span().add_event(event, attributes=attributes)
+
+
+@contextmanager
+def compensate_span(
+    effect_id: str, effect_context, outcome: str | None, *, state: str = "verified"
+):
+    if state not in COMPENSATION_STATES:
+        raise SemanticViolation(
+            f"compensation state {state!r} invalid; must be one of {sorted(COMPENSATION_STATES)}"
+        )
+    if state == "verified" and outcome not in COMPENSATION_OUTCOMES:
+        raise SemanticViolation(
+            f"verified compensation requires a valid outcome, got {outcome!r}"
+        )
+    if state != "verified" and outcome is not None:
+        # requested/unverified must not carry an outcome: that would be the conflation.
+        raise SemanticViolation(
+            f"compensation state {state!r} must not carry an outcome ({outcome!r}); "
+            "an outcome is evidence that it happened"
+        )
+    attributes = {ATTR_EFFECT_ID: effect_id, ATTR_COMPENSATION_STATE: state}
+    if outcome:
+        attributes[ATTR_COMPENSATION_OUTCOME] = outcome
     with tracer().start_as_current_span(
         COMPENSATE_SPAN_NAME,
         kind=SpanKind.CLIENT,
-        attributes={ATTR_EFFECT_ID: effect_id, ATTR_COMPENSATION_OUTCOME: outcome},
+        attributes=attributes,
         links=[link(effect_context, "compensates")],
     ) as span:
         yield span
