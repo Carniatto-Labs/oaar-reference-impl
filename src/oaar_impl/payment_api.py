@@ -4,6 +4,7 @@ import urllib.error
 import urllib.request
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import SpanKind
@@ -20,6 +21,25 @@ _gateway = {
     "decline_codes": {"insufficient_limit": "51", "card_blocked": "57", "gateway_declined": "05", "out_of_stock": "29"},
 }
 BRAND_LIMITS = {"visa": 1500.0, "mastercard": 800.0, "amex": 2000.0, "elo": 500.0, "unknown": 300.0}
+
+# Server-side idempotency store, keyed by the caller's idempotency key. A retried attempt
+# returns the original decision instead of charging (or reserving inventory) a second time.
+# Production deploys this as a unique index on the acquirer side; the semantic point is that
+# the runtime-owned key — not the transport — is what makes the retry safe.
+_IDEMPOTENT: dict[str, dict] = {}
+
+
+def _remember(key: str, status_code: int, body: dict) -> None:
+    if key:
+        _IDEMPOTENT[key] = {"status_code": status_code, "body": body}
+
+
+def _replay(entry: dict) -> JSONResponse:
+    body = {**entry["body"], "deduplicated": True}
+    if entry["status_code"] >= 400:
+        # preserve FastAPI's error envelope: callers parse HTTPException.detail
+        body = {"detail": body}
+    return JSONResponse(status_code=entry["status_code"], content=body)
 
 
 class _InventoryError(RuntimeError):
@@ -66,6 +86,7 @@ async def create_payment(request: Request):
     card_brand = body.get("card_brand", "unknown")
     product_id = body.get("product_id")
     quantity = int(body.get("quantity", 1))
+    idempotency_key = str(body.get("idempotency_key") or "")
     with trace.get_tracer("payment-api").start_as_current_span(
         "payment.process", context=context, kind=SpanKind.SERVER,
         attributes={
@@ -76,6 +97,12 @@ async def create_payment(request: Request):
             "purchase.payment.brand": card_brand,
         },
     ) as span:
+        if idempotency_key:
+            span.set_attribute("payment.idempotency_key", idempotency_key)
+        if idempotency_key and idempotency_key in _IDEMPOTENT:
+            span.set_attribute("payment.deduplicated", True)
+            return _replay(_IDEMPOTENT[idempotency_key])
+
         time.sleep(_gateway["latency_s"])
 
         reserved = False
@@ -88,15 +115,14 @@ async def create_payment(request: Request):
                 span.set_attribute("payment.status", "declined")
                 span.set_attribute("payment.failure.reason", exc.reason)
                 span.set_attribute("payment.failure.stage", exc.stage)
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "status": "declined",
-                        "reason": exc.reason,
-                        "stage": exc.stage,
-                        "gateway_code": _gateway["decline_codes"].get(exc.reason, "XX"),
-                    },
-                ) from None
+                detail = {
+                    "status": "declined",
+                    "reason": exc.reason,
+                    "stage": exc.stage,
+                    "gateway_code": _gateway["decline_codes"].get(exc.reason, "XX"),
+                }
+                _remember(idempotency_key, 409, detail)
+                raise HTTPException(status_code=409, detail=detail) from None
 
         def _auth_decline(reason: str):
             if reserved:
@@ -105,15 +131,14 @@ async def create_payment(request: Request):
             span.set_attribute("payment.failure.reason", reason)
             span.set_attribute("payment.failure.stage", "acquirer_authorization")
             span.set_attribute("payment.gateway.code", _gateway["decline_codes"].get(reason, "XX"))
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "status": "declined",
-                    "reason": reason,
-                    "stage": "acquirer_authorization",
-                    "gateway_code": _gateway["decline_codes"].get(reason, "XX"),
-                },
-            )
+            detail = {
+                "status": "declined",
+                "reason": reason,
+                "stage": "acquirer_authorization",
+                "gateway_code": _gateway["decline_codes"].get(reason, "XX"),
+            }
+            _remember(idempotency_key, 402, detail)
+            raise HTTPException(status_code=402, detail=detail)
 
         if card_last4 == "0000":
             _auth_decline("card_blocked")
@@ -125,9 +150,11 @@ async def create_payment(request: Request):
         payment_id = f"pay-{int(time.time() * 1000)}"
         span.set_attribute("payment.status", "approved")
         span.set_attribute("payment.id", payment_id)
-        return {
+        payload = {
             "status": "approved",
             "payment_id": payment_id,
             "auth_code": f"auth-{int(time.time() * 1000) % 100000}",
             "stage": "captured",
         }
+        _remember(idempotency_key, 200, payload)
+        return payload
