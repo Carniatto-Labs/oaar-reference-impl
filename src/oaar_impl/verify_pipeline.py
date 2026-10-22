@@ -23,6 +23,8 @@ UNIQUE_LABELS = {
     "agent_checkpoint_id",
     "agent_tool_call_id",
     "agent_effect_id",
+    "agent_outcome_subject",
+    "agent_operation_id",
     "run_id",
     "thread_id",
 }

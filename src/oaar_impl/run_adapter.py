@@ -8,12 +8,13 @@ from opentelemetry.trace import SpanContext
 from oaar_impl import correlation
 from oaar_impl import metrics as m
 from oaar_impl.spans import (
-    ATTR_LOGICAL_OUTCOME,
     emit_lifecycle,
     link,
     log_with_context,
     new_id,
     run_span,
+    set_artifact_outcome,
+    validate_artifact_outcome,
 )
 
 
@@ -25,7 +26,19 @@ class RunHandle:
     workflow_name: str = ""
     workflow_version: str = ""
     outcome: str | None = None
-    logical_outcome: str | None = None
+    _artifact_outcome: str | None = None
+
+    @property
+    def artifact_outcome(self) -> str | None:
+        return self._artifact_outcome
+
+    @artifact_outcome.setter
+    def artifact_outcome(self, value: str) -> None:
+        # Fail at assignment, not at span close: a business value ("accepted") must never
+        # reach the artifact-level attribute, and a caller that tries it should learn
+        # immediately, before the run outcome is recorded.
+        validate_artifact_outcome(value)
+        self._artifact_outcome = value
 
     def resume_link(self, relationship: str = "resume"):
         return link(self.span_context, relationship)
@@ -104,9 +117,11 @@ def durable_run(
         except Exception as exc:
             handle.outcome = "failed"
             duration_ms = (time.monotonic() - started) * 1000
-            if handle.logical_outcome is None:
-                handle.logical_outcome = "pending"
-            span.set_attribute(ATTR_LOGICAL_OUTCOME, handle.logical_outcome)
+            if handle.artifact_outcome is None:
+                # the run ended without producing its artifact and without deciding that it
+                # never will: at the artifact level the operation is still pending
+                handle.artifact_outcome = "pending"
+            set_artifact_outcome(span, handle.artifact_outcome)
             emit_lifecycle(
                 "agent.run.failed",
                 reason=str(exc)[:200] or "error",
@@ -127,8 +142,8 @@ def durable_run(
             if handle.outcome is None:
                 handle.outcome = "completed"
             duration_ms = (time.monotonic() - started) * 1000
-            if handle.logical_outcome:
-                span.set_attribute(ATTR_LOGICAL_OUTCOME, handle.logical_outcome)
+            if handle.artifact_outcome:
+                set_artifact_outcome(span, handle.artifact_outcome)
             emit_lifecycle(
                 f"agent.run.{handle.outcome}",
                 reason=getattr(handle, "outcome_reason", "run finished"),

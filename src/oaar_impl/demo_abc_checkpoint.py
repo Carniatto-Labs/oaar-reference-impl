@@ -133,7 +133,7 @@ def main(q_outcome: str = "accepted", context_path: str | None = None) -> int:
 
     # Run A: checkpoints, then explicitly fails before producing the artifact.
     # The GatewayCrash must CROSS durable_run's boundary (adapter marks the run
-    # failed with logical outcome pending); the scenario catches it outside.
+    # failed with the artifact still pending); the scenario catches it outside.
     with correlation.operation(OPERATION_P):
         try:
             with durable_run(
@@ -168,7 +168,7 @@ def main(q_outcome: str = "accepted", context_path: str | None = None) -> int:
             logger=logger,
         ) as run_b:
             graph.invoke({"fail_in": "", "stage": "restored"}, config_p)
-            run_b.logical_outcome = "completed"
+            run_b.artifact_outcome = "produced"
 
     # Run C: fresh thread, produces Q, completes
     with correlation.operation(OPERATION_Q):
@@ -178,7 +178,7 @@ def main(q_outcome: str = "accepted", context_path: str | None = None) -> int:
             graph.invoke(
                 {"proposal_id": "prop-002", "fail_in": "", "stage": "new"}, config_q
             )
-            run_c.logical_outcome = "completed"
+            run_c.artifact_outcome = "produced"
 
     if run_a.outcome != "failed" or run_b.outcome != "completed" or run_c.outcome != "completed":
         print(
@@ -190,8 +190,10 @@ def main(q_outcome: str = "accepted", context_path: str | None = None) -> int:
         return 1
 
     # Business results arrive AFTER all runs have ended (three-level outcomes)
-    resolution_p_trace = _resolve(run_b, "prop-001", "declined")
-    resolution_q_trace = _resolve(run_c, "prop-002", q_outcome)
+    with correlation.operation(OPERATION_P):
+        resolution_p_trace = _resolve(run_b, "prop-001", "declined")
+    with correlation.operation(OPERATION_Q):
+        resolution_q_trace = _resolve(run_c, "prop-002", q_outcome)
 
     conn.close()
     context = {

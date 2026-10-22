@@ -68,7 +68,10 @@ ATTR_GUARDRAIL_RISK_CATEGORY = "agent.guardrail.risk.category"
 ATTR_PURCHASE_OUTCOME = "agent.purchase.outcome"
 
 ATTR_LINK_TYPE = "agent.runtime.link.type"
-ATTR_LOGICAL_OUTCOME = "agent.runtime.logical.outcome"
+# Level 2 of the three-level outcome model (execution / artifact / business): whether THIS
+# run contributed a produced artifact for its logical operation. Business outcomes
+# (accepted/declined/pending/unknown) only ever live on `agent.outcome.observed` events.
+ATTR_ARTIFACT_OUTCOME = "agent.artifact.outcome"
 ATTR_LOG_CATEGORY = "agent.log.category"
 ATTR_LOG_CLASSIFICATION = "agent.log.classification"
 
@@ -80,6 +83,7 @@ DECISION_KINDS = frozenset(
     {"plan", "select_tool", "delegate", "respond", "compensate", "terminate"}
 )
 COMPENSATION_OUTCOMES = frozenset({"succeeded", "failed", "partial", "not_applicable"})
+ARTIFACT_OUTCOMES = frozenset({"produced", "pending", "not_applicable"})
 
 LIFECYCLE_EVENTS = frozenset(
     {
@@ -321,6 +325,25 @@ def _current_span():
     if not span or not span.get_span_context().is_valid:
         raise SemanticViolation("no active run span; lifecycle events must occur inside run_span")
     return span
+
+
+def set_artifact_outcome(span, value: str) -> None:
+    """Record the artifact-level outcome on a run span.
+
+    The closed vocabulary is deliberately disjoint from the business vocabulary
+    (accepted/declined/pending/unknown): writing a business value here would recreate the
+    conflation between "did the run produce the artifact" and "did the customer accept it".
+    """
+    validate_artifact_outcome(value)
+    span.set_attribute(ATTR_ARTIFACT_OUTCOME, value)
+
+
+def validate_artifact_outcome(value: str) -> None:
+    if value not in ARTIFACT_OUTCOMES:
+        raise SemanticViolation(
+            f"artifact outcome {value!r} invalid; must be one of {sorted(ARTIFACT_OUTCOMES)} "
+            "(business outcomes belong on agent.outcome.observed events)"
+        )
 
 
 def emit_lifecycle(event: str, *, reason: str, actor: str, state_version: int):

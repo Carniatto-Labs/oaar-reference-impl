@@ -22,6 +22,7 @@ ATTR_TOOL_DEDUP_STATUS = "agent.tool.deduplication.status"
 ATTR_COMPENSATION_OUTCOME = "agent.compensation.outcome"
 ATTR_GUARDRAIL_OUTCOME = "agent.guardrail.outcome"
 ATTR_PURCHASE_OUTCOME = "agent.purchase.outcome"
+ATTR_OUTCOME_DEFINITION = "agent.outcome.definition"
 
 ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
     {
@@ -35,6 +36,7 @@ ALLOWED_METRIC_ATTRIBUTE_KEYS = frozenset(
         ATTR_COMPENSATION_OUTCOME,
         ATTR_GUARDRAIL_OUTCOME,
         ATTR_PURCHASE_OUTCOME,
+        ATTR_OUTCOME_DEFINITION,
     }
 )
 
@@ -101,6 +103,14 @@ def _get_instruments():
             "purchases": _meter.create_counter(
                 "oaar.purchases", description="Purchase orders by business outcome"
             ),
+            "outcome_duplicates": _meter.create_counter(
+                "oaar.outcome.duplicates",
+                description="Terminal outcomes suppressed as duplicates of a recorded operation outcome",
+            ),
+            "outcome_conflicts": _meter.create_counter(
+                "oaar.outcome.conflicts",
+                description="Conflicting terminal outcomes offered for an already-resolved operation",
+            ),
         }
     return _cached_instruments
 
@@ -149,3 +159,15 @@ def record_purchase(outcome: str):
     attrs = {ATTR_PURCHASE_OUTCOME: outcome}
     enforce_metric_attributes(attrs)
     _get_instruments()["purchases"].add(1, attrs)
+
+
+def record_outcome_duplicate(definition: str):
+    attrs = {ATTR_OUTCOME_DEFINITION: definition}
+    enforce_metric_attributes(attrs)
+    _get_instruments()["outcome_duplicates"].add(1, attrs)
+
+
+def record_outcome_conflict(definition: str):
+    attrs = {ATTR_OUTCOME_DEFINITION: definition}
+    enforce_metric_attributes(attrs)
+    _get_instruments()["outcome_conflicts"].add(1, attrs)

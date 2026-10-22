@@ -16,7 +16,7 @@ from oaar_impl.spans import (
     ATTR_EFFECT_CONFIRMATION,
     ATTR_EFFECT_RESOURCE,
     ATTR_LINK_TYPE,
-    ATTR_LOGICAL_OUTCOME,
+    ATTR_ARTIFACT_OUTCOME,
     ATTR_RUN_ID,
 )
 
@@ -79,8 +79,8 @@ def check_run_a_failed_before_artifact(ctx):
             return False, "agent.run span for A not found"
         if attr_value(run_span.get("attributes"), OPERATION_ID_ATTR) != ctx["operation_p"]:
             return False, "run A missing logical operation correlation"
-        if attr_value(run_span.get("attributes"), ATTR_LOGICAL_OUTCOME) != "pending":
-            return False, "run A logical outcome should be pending at its end"
+        if attr_value(run_span.get("attributes"), ATTR_ARTIFACT_OUTCOME) != "pending":
+            return False, "run A artifact outcome should be pending at its end"
         if not _events(doc, FAILED_EVENT):
             return False, "agent.run.failed event missing in trace A"
         saves = [s for s in iter_spans(doc) if s.get("name") == SAVE_SPAN]
@@ -89,7 +89,7 @@ def check_run_a_failed_before_artifact(ctx):
         effects = [s for s in iter_spans(doc) if s.get("name") == EFFECT_SPAN]
         if effects:
             return False, "run A must not produce artifacts, but effect spans exist"
-        return True, f"A checkpointed ({len(saves)} saves), failed before any artifact, logical outcome pending"
+        return True, f"A checkpointed ({len(saves)} saves), failed before any artifact, artifact outcome pending"
 
     return fn
 
@@ -117,8 +117,8 @@ def check_run_b_restores_and_completes(ctx):
             return False, "resume link B -> A missing"
         if not _events(doc, COMPLETED_EVENT):
             return False, "agent.run.completed missing in trace B"
-        if attr_value(run_span.get("attributes"), ATTR_LOGICAL_OUTCOME) != "completed":
-            return False, "run B logical outcome should be completed"
+        if attr_value(run_span.get("attributes"), ATTR_ARTIFACT_OUTCOME) != "produced":
+            return False, "run B artifact outcome should be produced"
         produced = [
             s
             for s in iter_spans(doc)

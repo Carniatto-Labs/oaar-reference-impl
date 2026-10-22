@@ -20,6 +20,7 @@ from opentelemetry.trace import Status, StatusCode
 from oaar_impl import correlation
 from oaar_impl import metrics as m
 from oaar_impl.checkpointer_otel import OtelCheckpointer
+from oaar_impl.outcome_registry import OutcomeRegistry
 from oaar_impl.outcomes import emit_outcome
 from oaar_impl.run_adapter import durable_run
 from oaar_impl.spans import decision_span, effect_span, log_with_context, new_id, tool_span
@@ -33,6 +34,19 @@ OLLAMA_BASE_URL = os.environ.get("OAAR_OLLAMA_BASE_URL", "http://host.docker.int
 MAX_STEPS = 20
 
 logger = logging.getLogger("oaar.agent")
+
+# Durable-outcome store boundary: one terminal business outcome per logical operation, no
+# matter how many runs/attempts report it. In-process here; a production runtime backs the
+# same interface with a unique index on (subject, definition, definition_version).
+OUTCOME_REGISTRY = OutcomeRegistry()
+
+# Artifact level of the three-level outcome model: did this run produce its artifact?
+_ARTIFACT_OUTCOME = {
+    "accepted": "produced",
+    "declined": "not_applicable",
+    "pending": "pending",
+}
+
 
 _current_order: contextvars.ContextVar[str] = contextvars.ContextVar("oaar_purchase_order", default="")
 
@@ -120,6 +134,7 @@ def charge_card(product_id: str, quantity: int, card_number: str) -> str:
             "card_brand": brand,
             "product_id": product_id,
             "quantity": max(int(quantity), 1),
+            "idempotency_key": f"charge:{order_id}",
         })
         result = {**response, "product": product.get("name"), "amount": amount,
                   "card_brand": brand, "card_last4": last4, "order_id": order_id}
@@ -190,7 +205,8 @@ def _tools_node(state: AgentState) -> dict:
         name = call["name"]
         label = _TOOL_LABEL.get(name, name)
         effect = _TOOL_EFFECT.get(name, "read_only")
-        with tool_span(new_id("call"), label, effect) as span:
+        idempotency_key = f"charge:{_current_order.get('') or 'unassigned'}" if name == "charge_card" else None
+        with tool_span(new_id("call"), label, effect, idempotency_key=idempotency_key) as span:
             span.set_attribute("gen_ai.tool.name", name)
             _set_tool_attrs(span, name, call.get("args", {}))
             try:
@@ -202,7 +218,14 @@ def _tools_node(state: AgentState) -> dict:
             except Exception as exc:
                 payload = {"status": "error", "reason": str(exc), "stage": "tool_execution"}
             _apply_tool_outcome(span, name, payload)
-            m.record_tool_call(label, effect, "not_attempted")
+            if isinstance(payload, dict) and payload.get("deduplicated"):
+                dedup_status = "duplicate"
+            elif isinstance(payload, dict) and payload.get("status") in ("declined", "error"):
+                dedup_status = "not_attempted"
+            else:
+                dedup_status = "unique"
+            span.set_attribute("agent.tool.deduplication.status", dedup_status)
+            m.record_tool_call(label, effect, dedup_status)
             if name == "charge_card" and isinstance(payload, dict):
                 charges[payload.get("status", "error")] = payload
                 if payload.get("status") == "approved":
@@ -340,7 +363,7 @@ def run_purchase_agent(prompt: str, thread_id: str) -> Iterator[dict]:
                     outcome = "declined"
                 else:
                     outcome = "pending"
-                run.logical_outcome = outcome
+                run.artifact_outcome = _ARTIFACT_OUTCOME[outcome]
 
                 yield {"type": "final", "outcome": outcome, "order_id": order_id,
                        "reason": (charges.get("declined") or {}).get("reason", ""),
@@ -350,7 +373,13 @@ def run_purchase_agent(prompt: str, thread_id: str) -> Iterator[dict]:
                                  f"purchase {order_id} {outcome}: {_sanitize(final_content)[:180]}",
                                  run_id=run.run_id, thread_id=thread_id, category="purchase")
                 if outcome in ("accepted", "declined"):
-                    emit_outcome(f"purchase:{order_id}", "payment.authorization", "1.0.0", outcome)
-                    m.record_purchase(outcome)
+                    emit_outcome(
+                        f"purchase:{order_id}",
+                        "payment.authorization",
+                        "1.0.0",
+                        outcome,
+                        registry=OUTCOME_REGISTRY,
+                        count_metric=True,
+                    )
     finally:
         conn.close()
