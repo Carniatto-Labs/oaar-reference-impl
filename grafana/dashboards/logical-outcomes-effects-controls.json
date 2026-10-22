@@ -88,6 +88,16 @@
       "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_purchase_outcome) (oaar_purchases_total)", "legendFormat": "{{agent_purchase_outcome}}", "refId": "A" } ],
       "title": "Business outcomes, one per operation — never an execution failure (Discussion #1)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_effect_confirmation_status) (oaar_effect_resolutions_total)", "legendFormat": "{{agent_effect_confirmation_status}}", "refId": "A" } ],
+      "title": "Effect confirmation status — unresolved is a first-class outcome (RFC §9.1)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

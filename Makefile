@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke outcome-dedup-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke validate dash-smoke chat lock clean
+.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke outcome-dedup-smoke effect-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke validate dash-smoke chat lock clean
 
 up:
 	$(COMPOSE) up -d --wait
@@ -39,6 +39,10 @@ outcome-dedup-smoke:
 hitl-smoke:
 	$(COMPOSE) build app
 	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_hitl_resume && python -m oaar_impl.verify_hitl_resume"
+
+effect-smoke:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app sh -c "python -m oaar_impl.demo_effect_unresolved && python -m oaar_impl.verify_effect_unresolved"
 
 saga-smoke:
 	$(COMPOSE) build app

@@ -73,6 +73,8 @@ def check_query_reflection():
             "tool dedup": "sum by (agent_tool_deduplication_status) (oaar_tool_calls_total)",
             "outcome duplicates": "sum by (agent_outcome_definition) (oaar_outcome_duplicates_total)",
             "business outcomes": "sum by (agent_purchase_outcome) (oaar_purchases_total)",
+            "effect status": "sum by (agent_effect_confirmation_status) (oaar_effect_resolutions_total)",
+            "compensation states": "sum by (agent_compensation_state) (oaar_compensations_total)",
         }
         for label, query in queries.items():
             status, body = http_get(

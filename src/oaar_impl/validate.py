@@ -57,6 +57,16 @@ SCENARIOS = [
         (["python", "-m", "oaar_impl.demo_compensation_saga"], ["python", "-m", "oaar_impl.verify_compensation_saga"], None),
     ),
     (
+        "effect-unresolved",
+        "§9 §10",
+        "Effect evidence: lost ACK, authoritative readback, unresolved, verified compensation",
+        (
+            ["python", "-m", "oaar_impl.demo_effect_unresolved"],
+            ["python", "-m", "oaar_impl.verify_effect_unresolved"],
+            None,
+        ),
+    ),
+    (
         "fanout",
         "§4",
         "Delegation fan-out: parent_run.id, delegates_to + aggregates links",
