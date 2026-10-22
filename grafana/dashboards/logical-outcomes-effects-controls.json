@@ -65,6 +65,29 @@
       "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_decision_kind) (oaar_decisions_total)", "legendFormat": "{{agent_decision_kind}}", "refId": "A" } ],
       "title": "Decisions by kind (RFC §7)",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_outcome_definition) (oaar_outcome_duplicates_total)", "legendFormat": "duplicate: {{agent_outcome_definition}}", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_outcome_definition) (oaar_outcome_conflicts_total)", "legendFormat": "conflict: {{agent_outcome_definition}}", "refId": "B" }
+      ],
+      "title": "Business outcome accounting: duplicates vs conflicts (Discussion #1)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "oaar-prom" },
+      "fieldConfig": { "defaults": { "custom": { "fillOpacity": 20, "lineWidth": 2 }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "oaar-prom" }, "expr": "sum by (agent_purchase_outcome) (oaar_purchases_total)", "legendFormat": "{{agent_purchase_outcome}}", "refId": "A" } ],
+      "title": "Business outcomes, one per operation — never an execution failure (Discussion #1)",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

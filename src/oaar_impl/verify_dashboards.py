@@ -71,6 +71,8 @@ def check_query_reflection():
             "compensations": "sum by (agent_compensation_outcome) (oaar_compensations_total)",
             "guardrails": "sum by (agent_guardrail_outcome) (oaar_guardrail_evaluations_total)",
             "tool dedup": "sum by (agent_tool_deduplication_status) (oaar_tool_calls_total)",
+            "outcome duplicates": "sum by (agent_outcome_definition) (oaar_outcome_duplicates_total)",
+            "business outcomes": "sum by (agent_purchase_outcome) (oaar_purchases_total)",
         }
         for label, query in queries.items():
             status, body = http_get(

@@ -1,7 +1,9 @@
+import json
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 SCENARIOS = [
     (
@@ -30,6 +32,16 @@ SCENARIOS = [
             ["python", "-m", "oaar_impl.demo_variant_q_unknown"],
             ["python", "-m", "oaar_impl.verify_abc_checkpoint"],
             {"OAAR_ABC_CONTEXT_PATH": "/tmp/oaar-abc-unknown-context.json"},
+        ),
+    ),
+    (
+        "outcome-dedup",
+        "§11",
+        "One business outcome per logical operation: retries/restores do not inflate the rate",
+        (
+            ["python", "-m", "oaar_impl.demo_outcome_dedup"],
+            ["python", "-m", "oaar_impl.verify_outcome_dedup"],
+            None,
         ),
     ),
     (
@@ -74,6 +86,15 @@ PASS_RE = re.compile(r"\[PASS\]| PASS ")
 FAIL_RE = re.compile(r"\[FAIL\]| FAIL ")
 
 
+def spec_pin() -> dict:
+    """The spec version this harness is pinned to (see REFERENCE_IMPLEMENTATION.md)."""
+    path = Path(__file__).resolve().parents[2] / "spec.json"
+    try:
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+
 def run(cmd, env_extra=None):
     env = os.environ.copy()
     if env_extra:
@@ -82,8 +103,11 @@ def run(cmd, env_extra=None):
 
 
 def main() -> int:
+    spec = spec_pin()
     print("=" * 78)
     print("OAAR REFERENCE IMPLEMENTATION — FULL VALIDATION")
+    if spec:
+        print(f"spec: OAAR {spec.get('version')} (tag {spec.get('tag')}) — {spec.get('repo')}")
     print("=" * 78)
     total_pass = 0
     total_fail = 0
