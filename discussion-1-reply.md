@@ -11,7 +11,7 @@ Thanks @TheBuilderJR — this is the question we built a reference implementatio
 ([oaar-reference-impl](https://github.com/Carniatto-Labs/oaar-reference-impl)), and your reading
 matches both the intent and what we measured. The spec
 ([oaar](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes)) and
-the reproduction are separate repositories pinned to the same version (`v0.4.0`), so each number
+the reproduction are separate repositories pinned to the same version (`v0.4.1`), so each number
 below is attributable to a specific pair of versions.
 
 **1. Yes — §11 execution rates are Run-level by design, and they legitimately diverge from the
