@@ -2,17 +2,19 @@
 
 > Addressed to @TheBuilderJR's comment on "Introducing the Observability Architecture for Agentic Runtimes".
 > Both repositories are public and pinned to the same version: spec
-> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.2.0),
-> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.2.0). They are
-> separate on purpose. Numbers below: `make validate` = 60/60 checks, 11 scenarios,
+> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.3.0),
+> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.3.0). They are
+> separate on purpose. Numbers below: `make validate` = 66/66 checks, 12 scenarios,
 > LangGraph 1.x + Postgres checkpoints + OpenTelemetry → Tempo/Prometheus/Loki.
 
 ---
 
 Thanks @TheBuilderJR — this is the question we built a reference implementation to answer
-(https://github.com/Carniatto-Labs/oaar-reference-impl), and your reading matches both the intent and what we measured. The spec
-(https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes) and the reproduction are separate repositories pinned to the same version
-(`v0.2.0`), so each number below is attributable to a specific pair of versions.
+([oaar-reference-impl](https://github.com/Carniatto-Labs/oaar-reference-impl)), and your reading
+matches both the intent and what we measured. The spec
+([oaar](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes)) and
+the reproduction are separate repositories pinned to the same version (`v0.3.0`), so each number
+below is attributable to a specific pair of versions.
 
 **1. Yes — §11 execution rates are Run-level by design, and they legitimately diverge from the
 business rate in both directions.**
@@ -76,9 +78,11 @@ We'd support adding a non-normative worked example bridging §6 and §11:
 > numbers are correct — they answer different questions.
 
 Since your comment, the guide has a section on the three levels of outcome and this worked
-example (`ADOPTION_GUIDE.md`, "Worked Example"), and the RFC at `v0.2.0` defines the operation
-identity and the exactly-once rule behind these numbers. If the framing is wrong, the example
-is the cheapest thing to change — it is prose, not a schema.
+example (`ADOPTION_GUIDE.md`, "Worked Example"), and the RFC at `v0.3.0` defines the operation
+identity and the exactly-once rule behind these numbers. The same harness now also exercises
+the adjacent boundary — lost acknowledgement, authoritative readback, and an effect that stays
+`unresolved` — because a business rate built on unresolved effects is not a rate. If the framing
+is wrong, the example is the cheapest thing to change: it is prose, not a schema.
 
 Disclosure: we implemented the RFC in a reference implementation to validate it; this reply
 was drafted with AI assistance.
