@@ -1,12 +1,10 @@
-# Draft reply — Discussion #1 (execution identity vs logical outcome denominators)
+# Discussion #1 reply (posted)
 
-> Addressed to @TheBuilderJR's comment on "Introducing the Observability Architecture for Agentic Runtimes".
-> Both repositories are public and pinned to the same version: spec
-> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.4.0),
-> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.4.0). They are
-> separate on purpose. Numbers below: `make validate` = 80/80 checks, 13 scenarios,
-> LangGraph 1.x + Postgres checkpoints + OpenTelemetry → Tempo/Prometheus/Loki.
+Posted 2026-10-22:
+<https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes/discussions/1#discussioncomment-19119427>
 
+The body below is the posted text, kept for the record. The repository-level context (pinned
+versions, what the numbers mean) lives in the README.
 ---
 
 Thanks @TheBuilderJR — this is the question we built a reference implementation to answer
