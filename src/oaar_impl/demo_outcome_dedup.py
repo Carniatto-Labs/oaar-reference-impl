@@ -42,8 +42,15 @@ OPERATION_CONFLICT = "purchase:order-dedup-conflict"
 
 
 def prom_counter(name: str, **labels) -> float:
+    """Total of a counter, summed across instances.
+
+    Each runtime process gets its own ``service.instance.id``, so the Prometheus exporter keeps
+    one series per process. Reading the first series makes a check depend on scrape order; a
+    counter is only meaningful summed.
+    """
     selector = ",".join(f'{k}="{v}"' for k, v in labels.items())
-    query = urllib.parse.quote(f"{name}{{{selector}}}" if selector else name)
+    vector = f"{name}{{{selector}}}" if selector else name
+    query = urllib.parse.quote(f"sum({vector})")
     status, body = http_get(f"{PROMETHEUS}/api/v1/query?query={query}")
     if status != 200:
         return 0.0
@@ -76,29 +83,29 @@ def main() -> int:
         with durable_run(thread_retry, WORKFLOW_NAME, WORKFLOW_VERSION, logger=logger) as run_1:
             with decision_span(new_id("dec"), "select_tool", "charge the card", "tool_call", 1):
                 pass
-            emit_outcome(OPERATION_RETRY, DEFINITION, DEFINITION_VERSION, "accepted")
+            emit_outcome(OPERATION_RETRY, DEFINITION, DEFINITION_VERSION, "accepted", count_metric=True)
             run_1.artifact_outcome = "produced"
 
         with durable_run(
             thread_retry, WORKFLOW_NAME, WORKFLOW_VERSION, resume_from=run_1, logger=logger
         ) as run_2:
-            emit_outcome(OPERATION_RETRY, DEFINITION, DEFINITION_VERSION, "accepted")
+            emit_outcome(OPERATION_RETRY, DEFINITION, DEFINITION_VERSION, "accepted", count_metric=True)
             run_2.artifact_outcome = "produced"
 
     # 2. Pending at the reporting cut is not an outcome; the terminal value is recorded once.
     thread_pending = f"thread-dedup-pending-{stamp}"
     with correlation.operation(OPERATION_PENDING):
         with durable_run(thread_pending, WORKFLOW_NAME, WORKFLOW_VERSION, logger=logger) as run_3:
-            emit_outcome(OPERATION_PENDING, DEFINITION, DEFINITION_VERSION, "pending")
-            emit_outcome(OPERATION_PENDING, DEFINITION, DEFINITION_VERSION, "accepted")
+            emit_outcome(OPERATION_PENDING, DEFINITION, DEFINITION_VERSION, "pending", count_metric=True)
+            emit_outcome(OPERATION_PENDING, DEFINITION, DEFINITION_VERSION, "accepted", count_metric=True)
             run_3.artifact_outcome = "produced"
 
     # 3. A late conflicting outcome never overwrites the recorded one.
     thread_conflict = f"thread-dedup-conflict-{stamp}"
     with correlation.operation(OPERATION_CONFLICT):
         with durable_run(thread_conflict, WORKFLOW_NAME, WORKFLOW_VERSION, logger=logger) as run_4:
-            emit_outcome(OPERATION_CONFLICT, DEFINITION, DEFINITION_VERSION, "accepted")
-            emit_outcome(OPERATION_CONFLICT, DEFINITION, DEFINITION_VERSION, "declined")
+            emit_outcome(OPERATION_CONFLICT, DEFINITION, DEFINITION_VERSION, "accepted", count_metric=True)
+            emit_outcome(OPERATION_CONFLICT, DEFINITION, DEFINITION_VERSION, "declined", count_metric=True)
             run_4.artifact_outcome = "produced"
 
     context.update(
