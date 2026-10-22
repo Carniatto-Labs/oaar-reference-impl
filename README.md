@@ -5,19 +5,20 @@ specification, on a real durable agent runtime (LangGraph 1.x, Temporal planned 
 
 | | |
 |---|---|
-| **Spec** | OAAR **v0.3.0** — separate repository, pinned by tag |
+| **Spec** | OAAR **v0.4.0** — separate repository, pinned by tag |
 | **This repo** | the reproduction: harness, scenarios, dashboards, evidence |
 | **Pin** | `spec.json` (printed by `make validate`); the spec side is its `REFERENCE_IMPLEMENTATION.md` |
-| **Reproduce** | `make up && make validate` — 66 checks, 12 scenarios |
+| **Reproduce** | `make up && make validate` — 80 checks, 13 scenarios |
 
 Spec and reproduction are separate repositories on purpose: a red `make validate` is evidence
 about a runtime, not about the specification. Attribute names, vocabularies and required fields
 are defined by the spec only; changing one of them is a spec change first, then a change here.
 
-**Status:** phase 9 — **66 checks across twelve scenarios** (`make validate`; see **Known limits** for the current suite status), plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
+**Status:** phase 10 — **80 checks across thirteen scenarios** (`make validate`; see **Known limits** for the current suite status), plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
 
 | Scenario | Target | Validates |
 | --- | --- | --- |
+| Effect-evidence vectors | `make vectors` (14/14) | The §9.1 decision replayed from a portable JSON suite: thirteen cases covering every resolution reason, no stack and no project imports |
 | Effect evidence (lost ACK) | `make effect-smoke` (6/6) | `agent.effect` starts `unresolved`; transport ACK is not evidence; a fresh, registry-corroborated readback from an authorised source resolves it; stale, missing and model-estimated observations do not; compensation `requested` is not `verified` |
 | Business-outcome dedup | `make outcome-dedup-smoke` (6/6) | One business outcome per logical operation: a restored run that reports the same outcome again is kept as history but does not count; `pending` never counts; a late conflicting outcome is flagged and never overwrites the recorded one |
 | Human-in-the-loop resume | `make hitl-smoke` (5/5) | `agent.run.waiting` is a distinct lifecycle event — a run parked for human approval is not a failure; resume restores the exact waiting checkpoint (`resume` link + checkpoint age measured from telemetry) |
@@ -42,7 +43,7 @@ RFC coverage for this flow (§4 identity, §5 lifecycle, §7 decisions, §8 tool
 
 Phase 6 additions:
 
-- `make validate` — full harness: runs every demo + verify pair (pipeline, langgraph, abc, abc-unknown, outcome-dedup, hitl, saga, effect-unresolved, fanout, guardrail, mcp, grafana) in one pass and prints the consolidated **RFC section → evidence** matrix. Expected output: 66 pass / 0 fail.
+- `make validate` — full harness: runs every demo + verify pair (pipeline, langgraph, abc, abc-unknown, outcome-dedup, hitl, saga, effect-unresolved, fanout, guardrail, mcp, vectors, grafana) in one pass and prints the consolidated **RFC section → evidence** matrix. Expected output: 80 pass / 0 fail.
 - `make chat` — builds and starts the **interactive purchase assistant** at `http://localhost:8090` (chat UI, live agent-step timeline, Tempo trace links).
 - **Grafana** at `http://localhost:3000` (anonymous admin), folder **OAAR**:
   - *Runtime & Execution Identity* — total executions, outcomes by state, run duration, executions by workflow × outcome, decisions by kind.
@@ -64,7 +65,7 @@ Every normative section of the RFC is exercised by at least one check. The `make
 | §7 Decisions & the agentic loop | `agent.decision` spans with closed kind vocabulary (`plan/select_tool/delegate/respond/compensate/terminate`), sanitized basis, iteration id | fanout (`delegate`), purchase (`select_tool` with price in basis), guardrail (`terminate`), saga (`compensate`); the semantic layer REJECTS unknown kinds (`confirm_purchase` → SemanticViolation) and private chain-of-thought in basis |
 | §8 Tools & MCP | `gen_ai.execute_tool` + `gen_ai.tool.*`; effect class ∈ read_only/idempotent_write/mutable_write; retry.count, idempotency key, deduplication status; W3C propagation | mcp (retry + dedup observable per attempt), purchase (3 services in one trace); semantic layer rejects `mutable` (closed vocabulary) |
 | §9 External effects & compensation | `agent.effect` span per attempt (logical effect id, attempt id/index, mutation type, evidence kind, confirmation status, originating decision/tool, compensation availability); `agent.compensate` linked via `compensates` + `agent.effect.id`; outcomes succeeded/failed/partial/not_applicable, plus `agent.compensation.state` | saga (flight compensated, hotel+car survive → `partial`), purchase (charge effect only when confirmed; declined → no effect at all), effect-unresolved (verified and unverified compensations) |
-| §9.1 Intent / attempt / evidence | Effect starts `unresolved`; ACK is transport evidence, not effect evidence; a readback resolves only if bound to the effect and attempt, corroborated by the trusted registry, from a source the policy authorises, post-attempt and fresh; otherwise it stays `unresolved` with a reason; unresolved effects are counted by status, never as success or failure | effect-unresolved: confirmed (2 attempts, 1 logical id), contradicted → unconfirmed, stale → unresolved, no observation → unresolved, model estimate → unresolved; counters 1/1/3 |
+| §9.1 Intent / attempt / evidence | Effect starts `unresolved`; ACK is transport evidence, not effect evidence; a readback resolves only if bound to the effect and attempt, corroborated by the trusted registry, from a source the policy authorises, post-attempt and fresh; otherwise it stays `unresolved` with a reason; unresolved effects are counted by status, never as success or failure | effect-unresolved: confirmed (2 attempts, 1 logical id), contradicted → unconfirmed, stale → unresolved, no observation → unresolved, model estimate → unresolved; counters 1/1/3. Plus `vectors`: 13/13 portable cases, one per reason, digest-pinned to the spec |
 | §10 Non-linear causality | Typed span links only: `resume`, `delegates_to`, `triggered_by`, `compensates`, `retries`, `aggregates` | langgraph (`resume`), fanout (`delegates_to` + `aggregates`), saga (`compensates`), mcp (`retries`) |
 | §11 Metrics | Run duration, decision/tool/compensation/guardrail counts, outcome rates; unique ids MUST NOT be metric dimensions | metrics allowlist rejects `run.id` as label (SemanticViolation; cardinality bounded at 788 series); denominators kept separate: waiting/cancelled/declined never count as `failed` (abc-unknown, hitl, purchase: `failed` delta 0 while `completed` +2); business outcomes as separate low-cardinality series (`oaar.purchases_total{outcome}`); one business outcome per logical operation — retries/restores suppressed, conflicts flagged (outcome-dedup: 3 operations / 4 runs / 6 observations → +3) |
 | §12 Logs, privacy, guardrails | Logs carry trace/span/run/thread ids; content is opt-in; `agent.guardrail.evaluate` with policy id@version, no sensitive source | pipeline (50 correlated Loki lines; collector redacts `sk-` key + email), guardrail (bait policy name + body absent from traces AND logs), purchase (full PAN never present) |
@@ -72,7 +73,7 @@ Every normative section of the RFC is exercised by at least one check. The `make
 
 ## Purpose
 
-1. Validate every normative requirement of RFC 0.3.0 (operation identity, lifecycle, checkpoints, outcome levels, decisions, tools/MCP, external effects, compensation, causality links, metrics, privacy, collection architecture), and state the ones it does not yet exercise (see **Known limits**).
+1. Validate every normative requirement of RFC 0.4.0 (operation identity, lifecycle, checkpoints, outcome levels, decisions, tools/MCP, external effects, compensation, causality links, metrics, privacy, collection architecture), and state the ones it does not yet exercise (see **Known limits**).
 2. Validate experimentally the distinctions raised in [Discussion #1](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes/discussions/1): execution identity vs. logical outcome identity, three-level outcomes, and metric denominators (unit, cohort, window, finality).
 3. Prove the accounting rule those denominators depend on: **one business outcome per logical operation**, with retries and restores suppressed and conflicts flagged (`make outcome-dedup-smoke`).
 
@@ -97,24 +98,24 @@ Stated up front, because they bound what the measured numbers mean:
 - **The outcome registry is process-local.** `outcome_registry.py` implements the *semantics* (one terminal value per subject, duplicates suppressed, conflicts flagged) behind an interface whose production implementation is a unique index on `(subject, definition, definition_version)`. The scenario proves the accounting rule, not crash durability.
 - **One framework.** LangGraph only. RFC §14 asks for validation across more than one framework; Temporal is the planned second one.
 - **Run vs execution naming.** The RFC (and this implementation) treat a restore as a **new Run** with the same `thread.id`. Upstream PR open-telemetry/semantic-conventions-genai#445 keeps one `gen_ai.agent.execution.id` across suspend/resume. Both can coexist only if the mapping is stated explicitly; today it is not.
-- **Suite status at `v0.3.0`.** The check count is 66 (58 unique checks, `verify_abc_checkpoint` running twice). The last full green run was 54/54; the outcome-accounting, effect-evidence and semantic changes were validated offline (registry, counters, idempotency, vocabularies, effect resolution against in-memory spans) but the full harness has not been re-run against a live stack since. Run `make validate` before quoting the number.
+- **Suite status at `v0.4.0`.** The check count is 80 (72 unique checks, `verify_abc_checkpoint` running twice). The last full green run was 54/54; the outcome-accounting, effect-evidence, vector and semantic changes were validated offline (registry, counters, idempotency, vocabularies, effect resolution against in-memory spans) but the full harness has not been re-run against a live stack since. Run `make validate` before quoting the number.
 
 ## Reproduce
 
 ```bash
 git clone https://github.com/Carniatto-Labs/oaar-reference-impl && cd oaar-reference-impl
-git checkout v0.3.0
+git checkout v0.4.0
 make up          # pinned stack (app, product-api, payment-api, postgres, collector, tempo, prometheus, loki, grafana)
 make validate    # every demo + verify pair, plus the RFC section -> evidence matrix
 ```
 
-Expected: `individual checks: 66 pass, 0 fail` and `ALL SCENARIOS VALIDATED`.
+Expected: `individual checks: 80 pass, 0 fail` and `ALL SCENARIOS VALIDATED`.
 
 Requirements: Docker or colima with ~4 GB free. No model is needed for validation; the
 interactive assistant additionally needs `ollama pull gemma4:12b-mlx` and `make chat`.
 
 Individual scenarios run standalone: `make abc-smoke`, `make abc-unknown-smoke`,
-`make outcome-dedup-smoke`, `make hitl-smoke`, `make saga-smoke`, `make effect-smoke`, `make fanout-smoke`,
+`make outcome-dedup-smoke`, `make hitl-smoke`, `make saga-smoke`, `make effect-smoke`, `make vectors`, `make fanout-smoke`,
 `make guardrail-smoke`, `make mcp-smoke`, `make dash-smoke`.
 
 ## Documentation

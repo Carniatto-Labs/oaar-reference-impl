@@ -2,9 +2,9 @@
 
 > Addressed to @TheBuilderJR's comment on "Introducing the Observability Architecture for Agentic Runtimes".
 > Both repositories are public and pinned to the same version: spec
-> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.3.0),
-> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.3.0). They are
-> separate on purpose. Numbers below: `make validate` = 66/66 checks, 12 scenarios,
+> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.4.0),
+> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.4.0). They are
+> separate on purpose. Numbers below: `make validate` = 80/80 checks, 13 scenarios,
 > LangGraph 1.x + Postgres checkpoints + OpenTelemetry → Tempo/Prometheus/Loki.
 
 ---
@@ -13,7 +13,7 @@ Thanks @TheBuilderJR — this is the question we built a reference implementatio
 ([oaar-reference-impl](https://github.com/Carniatto-Labs/oaar-reference-impl)), and your reading
 matches both the intent and what we measured. The spec
 ([oaar](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes)) and
-the reproduction are separate repositories pinned to the same version (`v0.3.0`), so each number
+the reproduction are separate repositories pinned to the same version (`v0.4.0`), so each number
 below is attributable to a specific pair of versions.
 
 **1. Yes — §11 execution rates are Run-level by design, and they legitimately diverge from the
@@ -81,7 +81,8 @@ Since your comment, the guide has a section on the three levels of outcome and t
 example (`ADOPTION_GUIDE.md`, "Worked Example"), and the RFC at `v0.3.0` defines the operation
 identity and the exactly-once rule behind these numbers. The same harness now also exercises
 the adjacent boundary — lost acknowledgement, authoritative readback, and an effect that stays
-`unresolved` — because a business rate built on unresolved effects is not a rate. If the framing
+`unresolved` — because a business rate built on unresolved effects is not a rate, and publishes
+it as thirteen portable cases so another runtime can check the rule without reading our code. If the framing
 is wrong, the example is the cheapest thing to change: it is prose, not a schema.
 
 Disclosure: we implemented the RFC in a reference implementation to validate it; this reply
