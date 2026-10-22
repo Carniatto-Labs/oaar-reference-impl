@@ -5,7 +5,7 @@ specification, on a real durable agent runtime (LangGraph 1.x, Temporal planned 
 
 | | |
 |---|---|
-| **Spec** | OAAR **v0.4.0** — separate repository, pinned by tag |
+| **Spec** | OAAR **v0.4.1** — separate repository, pinned by tag |
 | **This repo** | the reproduction: harness, scenarios, dashboards, evidence |
 | **Pin** | `spec.json` (printed by `make validate`); the spec side is its `REFERENCE_IMPLEMENTATION.md` |
 | **Reproduce** | `make up && make validate` — 80 checks, 13 scenarios |
@@ -14,7 +14,7 @@ Spec and reproduction are separate repositories on purpose: a red `make validate
 about a runtime, not about the specification. Attribute names, vocabularies and required fields
 are defined by the spec only; changing one of them is a spec change first, then a change here.
 
-**Status:** phase 10 — **80 checks across thirteen scenarios** (`make validate`; see **Known limits** for the current suite status), plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
+**Status:** phase 10 — **80 checks across thirteen scenarios, green on 2026-10-22** (`make validate`), plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
 
 | Scenario | Target | Validates |
 | --- | --- | --- |
@@ -98,13 +98,13 @@ Stated up front, because they bound what the measured numbers mean:
 - **The outcome registry is process-local.** `outcome_registry.py` implements the *semantics* (one terminal value per subject, duplicates suppressed, conflicts flagged) behind an interface whose production implementation is a unique index on `(subject, definition, definition_version)`. The scenario proves the accounting rule, not crash durability.
 - **One framework.** LangGraph only. RFC §14 asks for validation across more than one framework; Temporal is the planned second one.
 - **Run vs execution naming.** The RFC (and this implementation) treat a restore as a **new Run** with the same `thread.id`. Upstream PR open-telemetry/semantic-conventions-genai#445 keeps one `gen_ai.agent.execution.id` across suspend/resume. Both can coexist only if the mapping is stated explicitly; today it is not.
-- **Suite status at `v0.4.0`.** The check count is 80 (72 unique checks, `verify_abc_checkpoint` running twice). The last full green run was 54/54; the outcome-accounting, effect-evidence, vector and semantic changes were validated offline (registry, counters, idempotency, vocabularies, effect resolution against in-memory spans) but the full harness has not been re-run against a live stack since. Run `make validate` before quoting the number.
+- **Suite status.** Measured, not maintained: `make validate` was last run on 2026-10-22 against the full stack (colima, Docker, aarch64) with `80 pass, 0 fail` — thirteen scenarios, 14/14 vectors, 8/8 dashboard queries. Re-run it after changing a scenario or the spec pin; the number is a measurement with a date, and stale numbers are worse than absent ones.
 
 ## Reproduce
 
 ```bash
 git clone https://github.com/Carniatto-Labs/oaar-reference-impl && cd oaar-reference-impl
-git checkout v0.4.0
+git checkout v0.4.1
 make up          # pinned stack (app, product-api, payment-api, postgres, collector, tempo, prometheus, loki, grafana)
 make validate    # every demo + verify pair, plus the RFC section -> evidence matrix
 ```
