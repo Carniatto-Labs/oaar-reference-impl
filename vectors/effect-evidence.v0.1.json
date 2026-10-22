@@ -1,0 +1,510 @@
+{
+  "suite": "oaar.effect-evidence",
+  "version": "0.1.0",
+  "spec": "0.4.0",
+  "section": "9.1",
+  "status": "draft",
+  "description": "Portable conformance vectors for RFC \u00a79.1. A runtime conforms if, for every case, it reaches the same (status, reason) pair without importing OAAR code: the file is the interface. Inputs are the effect identity, one observation (or none), the trusted evidence registry, the source policy and the freshness window.",
+  "freshness_ms": 30000,
+  "policy": {
+    "durable-record": {
+      "durable_state": [
+        "primary-store-readback"
+      ]
+    }
+  },
+  "statuses": [
+    "confirmed",
+    "unconfirmed",
+    "unresolved"
+  ],
+  "reasons": [
+    "confirmed",
+    "contradicted",
+    "no_observation",
+    "evidence_for_other_effect",
+    "evidence_for_other_attempt",
+    "unknown_verdict",
+    "evidence_not_registered",
+    "evidence_not_trusted",
+    "evidence_invalidated",
+    "source_not_authorized",
+    "observed_before_attempt",
+    "stale_evidence"
+  ],
+  "cases": [
+    {
+      "id": "confirmed_after_retry",
+      "title": "lost ACK, retry, fresh authoritative readback",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1001",
+        "evidence_digest": "sha256:record-1001",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1001",
+          "evidence_digest": "sha256:record-1001",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "confirmed",
+        "reason": "confirmed"
+      },
+      "note": "Attempt 1 lost its acknowledgement. The retry kept eff-1001 and allocated att-1001-2; only the fresh, corroborated readback resolves the effect."
+    },
+    {
+      "id": "contradicted_readback",
+      "title": "authoritative readback contradicts the intended effect",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1002",
+        "evidence_digest": "sha256:record-1002",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONTRADICTED",
+        "age_ms": 200
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1002",
+          "evidence_digest": "sha256:record-1002",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unconfirmed",
+        "reason": "contradicted"
+      },
+      "note": "The record is not there. That is knowledge, not failure: status unconfirmed, not failed."
+    },
+    {
+      "id": "stale_readback",
+      "title": "authoritative but stale readback",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1003",
+        "evidence_digest": "sha256:record-1003",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 300000
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1003",
+          "evidence_digest": "sha256:record-1003",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": false
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "stale_evidence"
+      },
+      "note": "A CONFIRMED verdict that is older than the freshness window proves a past state, not this one."
+    },
+    {
+      "id": "no_observation",
+      "title": "dispatch with no readback at all",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": null,
+      "registry": [],
+      "expect": {
+        "status": "unresolved",
+        "reason": "no_observation"
+      },
+      "note": "The ACK was lost and nobody looked. Transport silence is not evidence of failure."
+    },
+    {
+      "id": "model_estimate",
+      "title": "a runtime estimate claims CONFIRMED",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1005",
+        "evidence_digest": "sha256:estimate-1005",
+        "source_id": "runtime-estimator",
+        "observation_kind": "model_estimate",
+        "verdict": "CONFIRMED",
+        "age_ms": 50
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1005",
+          "evidence_digest": "sha256:estimate-1005",
+          "verifier_id": "estimator",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "source_not_authorized"
+      },
+      "note": "Registered and trusted as a record, but the policy does not let an estimator speak for durable state."
+    },
+    {
+      "id": "cached_state",
+      "title": "a cache readback claims CONFIRMED",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1006",
+        "evidence_digest": "sha256:cache-1006",
+        "source_id": "cache-readback",
+        "observation_kind": "cached_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 40
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1006",
+          "evidence_digest": "sha256:cache-1006",
+          "verifier_id": "cache",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "source_not_authorized"
+      },
+      "note": "A cache may be right and still not be authoritative."
+    },
+    {
+      "id": "digest_mismatch",
+      "title": "evidence id registered, digest does not match",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1007",
+        "evidence_digest": "sha256:record-1007-b",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1007",
+          "evidence_digest": "sha256:record-1007-a",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "evidence_not_registered"
+      },
+      "note": "A source name and an evidence id are not enough. The registry must corroborate the exact digest, or a spoofed claim would resolve the effect."
+    },
+    {
+      "id": "evidence_for_other_attempt",
+      "title": "readback for a different attempt of the same effect",
+      "effect": {
+        "logical_id": "eff-1008",
+        "attempt_id": "att-1008-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1008",
+        "attempt_id": "att-1008-1",
+        "evidence_id": "ev-1008",
+        "evidence_digest": "sha256:record-1008",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1008",
+          "attempt_id": "att-1008-1",
+          "evidence_id": "ev-1008",
+          "evidence_digest": "sha256:record-1008",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "evidence_for_other_attempt"
+      },
+      "note": "The same logical effect, but the observation belongs to another dispatch."
+    },
+    {
+      "id": "evidence_for_other_effect",
+      "title": "readback for a different logical effect",
+      "effect": {
+        "logical_id": "eff-1009",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-other-1009",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1009",
+        "evidence_digest": "sha256:record-1009",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-other-1009",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1009",
+          "evidence_digest": "sha256:record-1009",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "evidence_for_other_effect"
+      },
+      "note": "Correlation by timing or resource name is not identity."
+    },
+    {
+      "id": "invalidated_evidence",
+      "title": "the registry invalidated the evidence record",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1010",
+        "evidence_digest": "sha256:record-1010",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1010",
+          "evidence_digest": "sha256:record-1010",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "invalidated",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "evidence_invalidated"
+      },
+      "note": "Evidence can be retracted after the fact; an effect resolved on it does not stay resolved on a stale claim."
+    },
+    {
+      "id": "untrusted_verifier",
+      "title": "the verifier is not trusted",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1011",
+        "evidence_digest": "sha256:record-1011",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1011",
+          "evidence_digest": "sha256:record-1011",
+          "verifier_id": "store-attestor",
+          "trust": "self_declared",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "evidence_not_trusted"
+      },
+      "note": "A downstream that declares its own evidence true is exactly what the registry exists to prevent."
+    },
+    {
+      "id": "observed_before_attempt",
+      "title": "the observation predates the dispatch",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1012",
+        "evidence_digest": "sha256:record-1012",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "CONFIRMED",
+        "age_ms": -50
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1012",
+          "evidence_digest": "sha256:record-1012",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": false,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "observed_before_attempt"
+      },
+      "note": "A pre-dispatch readback describes the world before the attempt, not its outcome."
+    },
+    {
+      "id": "unknown_verdict",
+      "title": "the observation carries a verdict the contract does not know",
+      "effect": {
+        "logical_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "domain": "durable-record",
+        "mutation": "create"
+      },
+      "observation": {
+        "logical_effect_id": "eff-1001",
+        "attempt_id": "att-1001-2",
+        "evidence_id": "ev-1013",
+        "evidence_digest": "sha256:record-1013",
+        "source_id": "primary-store-readback",
+        "observation_kind": "durable_state",
+        "verdict": "UNKNOWN",
+        "age_ms": 120
+      },
+      "registry": [
+        {
+          "logical_effect_id": "eff-1001",
+          "attempt_id": "att-1001-2",
+          "evidence_id": "ev-1013",
+          "evidence_digest": "sha256:record-1013",
+          "verifier_id": "store-attestor",
+          "trust": "verified",
+          "invalidation": "valid",
+          "observed_after_attempt": true,
+          "fresh": true
+        }
+      ],
+      "expect": {
+        "status": "unresolved",
+        "reason": "unknown_verdict"
+      },
+      "note": "Unknown vocabulary must fail closed, not be read as CONFIRMED because it is not CONTRADICTED."
+    }
+  ]
+}

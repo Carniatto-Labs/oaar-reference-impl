@@ -85,6 +85,12 @@ SCENARIOS = [
         (["python", "-m", "oaar_impl.demo_mcp_retry_dedup"], ["python", "-m", "oaar_impl.verify_mcp_retry_dedup"], None),
     ),
     (
+        "vectors",
+        "§9.1",
+        "Portable effect-evidence vectors: every resolution reason, no stack required",
+        (None, ["python", "-m", "oaar_impl.vectors"], None),
+    ),
+    (
         "grafana",
         "§13",
         "Grafana reflects the run: provisioned dashboards + datasource queries return scenario data",

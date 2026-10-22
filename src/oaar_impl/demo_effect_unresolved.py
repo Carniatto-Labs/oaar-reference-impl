@@ -242,7 +242,7 @@ def case_contradicted(registry, stamp, context):
             resolution = resolve(obs, registry, logical_effect_id=effect_id, attempt_id=attempt)
             record_resolution(run, effect_id, attempt, resolution, observed=True)
 
-            if resolution.status == "contradicted":
+            if resolution.status == "unconfirmed":
                 # compensation is a distinct, linked effect; requested first, then verified
                 emit_effect_event(
                     "agent.compensation.requested",

@@ -1,8 +1,14 @@
 {
   "name": "OAAR",
-  "version": "0.3.0",
-  "tag": "v0.3.0",
+  "version": "0.4.0",
+  "tag": "v0.4.0",
   "repo": "https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes",
   "contract": "REFERENCE_IMPLEMENTATION.md",
-  "note": "Spec and reproduction are separate repositories. This file is the implementation side of the pin; the spec side is its REFERENCE_IMPLEMENTATION.md. Attribute names, vocabularies and required fields come from the spec only. Printed by `make validate`."
+  "note": "Spec and reproduction are separate repositories. This file is the implementation side of the pin; the spec side is its REFERENCE_IMPLEMENTATION.md. Attribute names, vocabularies and required fields come from the spec only. Printed by `make validate`.",
+  "vectors": {
+    "path": "vectors/effect-evidence.v0.1.json",
+    "version": "0.1.0",
+    "digest": "sha256:d06b7062870bce7b6dc922a403958fca84306a471070cf0f475cf61719da1121"
+  },
+  "vectors_digest": "sha256:d06b7062870bce7b6dc922a403958fca84306a471070cf0f475cf61719da1121"
 }

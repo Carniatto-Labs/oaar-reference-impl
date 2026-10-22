@@ -25,6 +25,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 CONFIRMED = "confirmed"
+#: A contradicted effect is knowledge, not failure: it is ``unconfirmed`` in the confirmation
+#: vocabulary, with ``contradicted`` as the reason.
+UNCONFIRMED = "unconfirmed"
 CONTRADICTED = "contradicted"
 UNRESOLVED = "unresolved"
 
@@ -156,5 +159,6 @@ def resolve(
     if not record.fresh or observation.age_ms > freshness_ms:
         return Resolution(UNRESOLVED, "stale_evidence", observation.evidence_id)
 
-    status = CONFIRMED if observation.verdict == "CONFIRMED" else CONTRADICTED
-    return Resolution(status, status, observation.evidence_id)
+    if observation.verdict == "CONFIRMED":
+        return Resolution(CONFIRMED, "confirmed", observation.evidence_id)
+    return Resolution(UNCONFIRMED, "contradicted", observation.evidence_id)

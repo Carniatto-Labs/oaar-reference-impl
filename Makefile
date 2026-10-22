@@ -1,6 +1,6 @@
 COMPOSE := docker compose
 
-.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke outcome-dedup-smoke effect-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke validate dash-smoke chat lock clean
+.PHONY: up down ps logs preflight smoke langgraph-smoke abc-smoke abc-unknown-smoke outcome-dedup-smoke effect-smoke hitl-smoke saga-smoke fanout-smoke guardrail-smoke mcp-smoke validate vectors dash-smoke chat lock clean
 
 up:
 	$(COMPOSE) up -d --wait
@@ -68,6 +68,10 @@ chat:
 	$(COMPOSE) build chat-panel product-api payment-api
 	$(COMPOSE) up -d chat-panel
 	@echo "Purchase assistant running at http://localhost:8090"
+
+vectors:
+	$(COMPOSE) build app
+	$(COMPOSE) run --rm app python -m oaar_impl.vectors
 
 dash-smoke:
 	$(COMPOSE) run --rm app python -m oaar_impl.verify_dashboards
