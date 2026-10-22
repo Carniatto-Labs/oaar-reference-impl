@@ -8,13 +8,13 @@ specification, on a real durable agent runtime (LangGraph 1.x, Temporal planned 
 | **Spec** | OAAR **v0.2.0** — separate repository, pinned by tag |
 | **This repo** | the reproduction: harness, scenarios, dashboards, evidence |
 | **Pin** | `spec.json` (printed by `make validate`); the spec side is its `REFERENCE_IMPLEMENTATION.md` |
-| **Reproduce** | `make up && make validate` → **60/60** |
+| **Reproduce** | `make up && make validate` — 60 checks, 11 scenarios |
 
 Spec and reproduction are separate repositories on purpose: a red `make validate` is evidence
 about a runtime, not about the specification. Attribute names, vocabularies and required fields
 are defined by the spec only; changing one of them is a spec change first, then a change here.
 
-**Status:** phase 8 — **`make validate` = 60/60 checks** across eleven scenarios, plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
+**Status:** phase 8 — **60 checks across eleven scenarios** (`make validate`; see **Known limits** for the current suite status), plus the **interactive purchase assistant** (`make chat` → `http://localhost:8090`) where the agent runs real free-form prompts end to end. Grafana reflects every run (three provisioned dashboards). Validation scenarios (each also runnable standalone via `make <target>`):
 
 | Scenario | Target | Validates |
 | --- | --- | --- |
@@ -41,7 +41,7 @@ RFC coverage for this flow (§4 identity, §5 lifecycle, §7 decisions, §8 tool
 
 Phase 6 additions:
 
-- `make validate` — full harness: runs every demo + verify pair (pipeline, langgraph, abc, abc-unknown, outcome-dedup, hitl, saga, fanout, guardrail, mcp, grafana) in one pass and prints the consolidated **RFC section → evidence** matrix. Current output: 60 pass / 0 fail.
+- `make validate` — full harness: runs every demo + verify pair (pipeline, langgraph, abc, abc-unknown, outcome-dedup, hitl, saga, fanout, guardrail, mcp, grafana) in one pass and prints the consolidated **RFC section → evidence** matrix. Expected output: 60 pass / 0 fail.
 - `make chat` — builds and starts the **interactive purchase assistant** at `http://localhost:8090` (chat UI, live agent-step timeline, Tempo trace links).
 - **Grafana** at `http://localhost:3000` (anonymous admin), folder **OAAR**:
   - *Runtime & Execution Identity* — total executions, outcomes by state, run duration, executions by workflow × outcome, decisions by kind.
