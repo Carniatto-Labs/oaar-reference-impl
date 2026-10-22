@@ -94,6 +94,7 @@ Stated up front, because they bound what the measured numbers mean:
 - **The outcome registry is process-local.** `outcome_registry.py` implements the *semantics* (one terminal value per subject, duplicates suppressed, conflicts flagged) behind an interface whose production implementation is a unique index on `(subject, definition, definition_version)`. The scenario proves the accounting rule, not crash durability.
 - **One framework.** LangGraph only. RFC §14 asks for validation across more than one framework; Temporal is the planned second one.
 - **Run vs execution naming.** The RFC (and this implementation) treat a restore as a **new Run** with the same `thread.id`. Upstream PR open-telemetry/semantic-conventions-genai#445 keeps one `gen_ai.agent.execution.id` across suspend/resume. Both can coexist only if the mapping is stated explicitly; today it is not.
+- **Suite status at `v0.2.0`.** The check count is 60 (52 unique checks, `verify_abc_checkpoint` running twice). The prior suite was green at 54/54; the outcome-accounting scenario and the semantic changes were validated offline (registry, counters, idempotency, vocabulary) but the full harness has not been re-run against a live stack after those changes. Run `make validate` before quoting the number.
 
 ## Reproduce
 
