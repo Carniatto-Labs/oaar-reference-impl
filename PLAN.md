@@ -3,7 +3,7 @@
 **Status:** Approved, not started
 **Version:** 0.1.0
 **Date:** 2026-09-27
-**Spec under validation:** [OAAR RFC 0.1.0](https://github.com/Carniatto-Labs/oaar/blob/main/RFC.md)
+**Spec under validation:** [OAAR RFC](https://github.com/Carniatto-Labs/oaar/blob/main/RFC.md) — the plan was written against 0.1.0; phases 4 and 8 extended it to 0.2.0
 **Driving discussion:** [Carniatto-Labs/oaar Discussion #1](https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes/discussions/1)
 
 ## 1. Purpose
@@ -179,6 +179,7 @@ Asserts operate on flow-level and outcome events, never on LLM content — both 
 | 5 | Remaining scenarios (HITL, saga, delegation, guardrail, MCP) | Full RFC coverage |
 | 6 | Harness: validate.py, Grafana dashboards, evidence export | Automated validation green |
 | 7 | README validation matrix (RFC § → code → evidence) | Documentation complete |
+| 8 | Outcome accounting: one business outcome per logical operation (registry + dedup scenario + dashboards) | Attempts cannot inflate the business denominator |
 
 ## 11. Post-validation sequence (out of scope for this plan)
 

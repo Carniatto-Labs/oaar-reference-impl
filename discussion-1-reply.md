@@ -1,65 +1,84 @@
 # Draft reply — Discussion #1 (execution identity vs logical outcome denominators)
 
 > Addressed to @TheBuilderJR's comment on "Introducing the Observability Architecture for Agentic Runtimes".
-> Replace `[REPO-LINK]` with the repository link before posting. Numbers below are measured output of
-> this reference implementation (`make validate`, 60/60 checks, LangGraph 1.2 + Postgres checkpoints
-> + OTel → Tempo/Prometheus/Loki).
+> Both repositories are public and pinned to the same version: spec
+> https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes (v0.2.0),
+> reproduction https://github.com/Carniatto-Labs/oaar-reference-impl (tag v0.2.0). They are
+> separate on purpose. Numbers below: `make validate` = 60/60 checks, 11 scenarios,
+> LangGraph 1.x + Postgres checkpoints + OpenTelemetry → Tempo/Prometheus/Loki.
 
 ---
 
-Thanks @TheBuilderJR — this is exactly the question we built a reference implementation to answer
-([REPO-LINK]), and your reading matches both the intent and what we measured empirically.
+Thanks @TheBuilderJR — this is the question we built a reference implementation to answer
+(https://github.com/Carniatto-Labs/oaar-reference-impl), and your reading matches both the intent and what we measured. The spec
+(https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes) and the reproduction are separate repositories pinned to the same version
+(`v0.2.0`), so each number below is attributable to a specific pair of versions.
 
-**1. Yes — §11 rates are execution-level by design.**
+**1. Yes — §11 execution rates are Run-level by design, and they legitimately diverge from the
+business rate in both directions.**
 
-Completion/failure/cancellation/compensation rates are Run-level numbers: they answer "how healthy
-is the runtime at executing what it was asked to execute", not "how often did the business get what
-it wanted". Those denominators legitimately diverge in *both* directions, and we test both skews:
+*One logical outcome, several executions.* Run A checkpoints and fails before producing its
+artifact; Run B restores A's checkpoint (same `thread.id`, `resume` link, same
+`checkpoint.id`) and produces the artifact. Measured: `oaar_runs_total` +1 `failed` and +1
+`completed` — two executions — while both operations eventually produce their artifact
+(2/2). Counting distinct `thread.id` would not recover that: threads continue with later,
+unrelated work.
 
-- **One logical outcome, N executions.** Run A checkpoints and fails; Run B restores the exact
-  checkpoint (same `thread.id`, `resume` link) and completes. Measured in our harness
-  (`abc` scenario): `oaar_runs_total{outcome=completed}` +1 and `{outcome=failed}` +1 — two
-  executions — while the logical operation, identified by a `correlation.operation` id carried on
-  events and logs, has exactly one outcome (accepted). Artifact production is 2/2 and customer
-  acceptance is 1/2. You're right that distinct-thread counting would not recover the outcome: the
-  thread continues with later, unrelated work. Our checkpoint-age check (measured from span
-  timestamps, ≥ 1.5 s) additionally shows the restore is real, not a re-run.
+*Execution success, business decline.* In the e-commerce flow the payment gateway declines
+the charge. The execution is healthy end to end (agent → product-api → payment-api in one
+trace, `payment.failure.reason=insufficient_limit` / `payment.failure.stage=
+acquirer_authorization` on the tool span, no charge effect created), so the run counts as
+`completed`. The business outcome `declined` exists only on the `agent.outcome.observed`
+event. `waiting` and `cancelled` likewise never count as `failed`.
 
-- **Execution success, business decline.** In our e-commerce scenario (`purchase` scenario) the
-  payment gateway declines the charge. The execution is healthy end to end — agent → product-api →
-  payment-api in one trace, the error properly mapped to `payment.failure.stage=acquirer_authorization`
-  / `reason=gateway_declined` on the tool span, no charge effect created — so the run completes:
-  `completed` +2, `failed` +0 across both flows. The business outcome `declined` exists only on the
-  `agent.outcome.observed` event and a separate counter, never in the execution-failure series.
+**2. The application outcome key lives on events, never on a metric dimension.**
 
-**2. The application outcome key stays on events — not as a metric dimension.**
+- Execution metrics: `oaar.runs`, labelled only by `agent.runtime.workflow.name`,
+  `agent.runtime.workflow.version` and `agent.run.outcome` ∈ completed / failed / cancelled.
+  Nothing else.
+- The logical operation is `agent.operation.id`: application-assigned, carried on lifecycle
+  events and on `agent.outcome.observed`, never derived from `thread.id` or `trace.id`, and
+  never a metric label.
+- Business outcomes ride on `agent.outcome.observed` with `agent.outcome.subject`,
+  `agent.outcome.definition`, `agent.outcome.definition.version`, `agent.outcome.value`
+  (accepted / declined / pending / unknown) and `agent.outcome.observed_at`.
+- Business rates come from their own low-cardinality series (here `oaar.purchases`, labelled
+  by business outcome) or from queries grouping executions by `agent.operation.id`.
+- The boundary is enforced at emit time: adding `run.id`, `thread.id`, `checkpoint.id`,
+  `agent.operation.id` or any non-allowlisted key to a metric raises a violation in the
+  semantic layer, and the validation harness asserts the Prometheus series dump carries no
+  unique-id label.
 
-Exactly the shape you suggested:
+**3. One outcome per operation — because attempts otherwise inflate the denominator.**
 
-- Execution metrics: `oaar_runs_total` with only low-cardinality labels (`workflow_name`,
-  `outcome` ∈ completed/failed/cancelled). `waiting` is a lifecycle state, not a failure;
-  cancelled guardrail blocks are not failures; declined purchases are not failures.
-- The application outcome key (`agent.logical.outcome` ∈ accepted/declined/pending/unknown) rides
-  on `agent.outcome.observed` events and correlated logs — never on execution metrics.
-- Business rates come from separate low-cardinality series (e.g.
-  `oaar_purchases_total{outcome=accepted|declined}`) or from dashboard queries that group
-  executions by `correlation.operation` via trace/log lookup.
-- We enforce "no unique ids as metric dimensions" in the semantic layer: adding a `run.id` label to
-  a metric raises a violation at emit time, so the operation id can't silently leak into a
-  denominator.
+Your second failure mode is real and we now test it (`make outcome-dedup-smoke`). Two runs of
+the same operation, the second resuming the first, both report `accepted`. Across 3
+operations, 4 runs and 6 reported outcomes we get exactly +3 on `oaar.purchases`
+(`oaar_purchases_total` in Prometheus):
 
-**3. A worked example for the guide.**
+- the repeated terminal value is kept on the event stream (`agent.outcome.recorded=false`,
+  `agent.outcome.prior_value=accepted`) but suppressed for counting, and counted once in
+  `oaar.outcome.duplicates`;
+- `pending` is recorded as an observation and never as an outcome, so a cut-off report does
+  not turn into a rejection;
+- a late `declined` for an already-`accepted` subject is flagged in
+  `oaar.outcome.conflicts` with the recorded value unchanged — never silently
+  overwritten.
 
-We'd support adding a non-normative worked example to the adoption guide (bridging §6 and §11),
-roughly:
+**4. A worked example for the guide.**
 
-> Run A checkpoints (state v3) and fails. Run B restores v3 and completes the same work.
-> Execution panel: failed +1, completed +1. Operation panel (grouped by
-> `correlation.operation`): 1 outcome, accepted. Both numbers are correct — they answer
-> different questions.
+We'd support adding a non-normative worked example bridging §6 and §11:
 
-Our reference implementation runs this exact scenario (plus the pending-at-reporting-cut variant,
-where `pending` at the cut is not a failure) — happy to distill it into the guide if useful.
+> Run A checkpoints (state v3) and fails before producing proposal P (artifact outcome
+> pending). Run B restores v3 and produces P (artifact outcome produced). Run C, on another
+> thread, produces Q. Execution panel: 1 failed, 2 completed → 2/3. Operation panel:
+> artifacts 2/2 (P by B, Q by C); business outcomes 1/2 (P declined, Q accepted). Both
+> numbers are correct — they answer different questions.
 
-Disclosure: we implemented the RFC in a reference implementation to validate it; this reply was
-drafted with AI assistance.
+Since your comment, the guide has a section on the three levels of outcome and this worked
+example (`ADOPTION_GUIDE.md`, "Worked Example"), and the RFC at `v0.2.0` defines the operation
+identity and the exactly-once rule behind these numbers. If the framing is wrong, the example
+is the cheapest thing to change — it is prose, not a schema.
+
+Disclosure: we implemented the RFC in a reference implementation to validate it; this reply
+was drafted with AI assistance.

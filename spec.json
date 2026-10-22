@@ -1,0 +1,8 @@
+{
+  "name": "OAAR",
+  "version": "0.2.0",
+  "tag": "v0.2.0",
+  "repo": "https://github.com/Carniatto-Labs/Observability-Architecture-for-Agentic-Runtimes",
+  "contract": "REFERENCE_IMPLEMENTATION.md",
+  "note": "Spec and reproduction are separate repositories. This file is the implementation side of the pin; the spec side is its REFERENCE_IMPLEMENTATION.md. Attribute names, vocabularies and required fields come from the spec only. Printed by `make validate`."
+}
